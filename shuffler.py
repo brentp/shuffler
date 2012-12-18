@@ -1,5 +1,6 @@
 from toolshed import reader, nopen
 from tempfile import mktemp
+import random
 
 def _run(cmd):
     if cmd.startswith("|"): cmd = cmd[1:]
@@ -10,30 +11,35 @@ class Shuffler(object):
     given a query and a subject
     compare the original [value] of query and subject with the
     values after n shufflings of the query compared to the same subject.
-    see below for examples of value_fn.
     """
-    def __init__(self, query, subject, genome, value_fn, n=10, shuffle_str=""):
+    def __init__(self, query, subject, genome, value_fn, n=10, shuffle_str="",
+            seed=None):
         # TODO -excl, -incl
 
         self.query = query + ".sorted"
         self.value_fn = value_fn
         self.subject = subject + ".sorted"
         _run("sort -k1,1 -k2,2n %s > %s" % (query, self.query))
-        _run("|sort -k1,1 -k2,2n %s > %s" % (subject, self.subject))
+        _run("sort -k1,1 -k2,2n %s > %s" % (subject, self.subject))
         self.n = n
         self.genome = mktemp(suffix="." + genome)
         _run('mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e \
                 "select chrom, size from %s.chromInfo" > %s' % (genome, self.genome))
         self.shuffle_str = shuffle_str
+        self.seed = seed
 
-    def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s"):
+    def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
+            sims=False):
+        random.seed(self.seed)
         self.obs = self.command(command, dict(query=self.query,
             subject=self.subject))
         sims = []
         for i in xrange(self.n):
             temp = self.shuffle()
             sims.append(self.command(command, dict(query=temp, subject=self.subject)))
-        return self.compare(sims)
+        compare = self.compare(sims)
+        if sims: compare['sims'] = sims
+        return compare
 
     def command(self, command, args_dict):
         res = nopen("|%s" % (command % args_dict))
@@ -41,20 +47,27 @@ class Shuffler(object):
 
     def shuffle(self):
         temp = mktemp(suffix=".shuffled")
-        _run('bedtools shuffle %s -i %s -g %s | sort -k1,1 -k2,2n > %s' %
-                (self.shuffle_str,
+        bed_seed = random.randint(0, 99999999999)
+        _run('bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n > %s' %
+                (bed_seed, self.shuffle_str,
                 self.query, self.genome, temp))
         return temp
 
-    def compare(self, sims_output):
-        d = dict(observed=self.obs,
-                n_sims=self.n,
-                n_sims_gt=sum(1 for s in sims_output if s > self.obs),
-                n_sims_eq=sum(1 for s in sims_output if s == self.obs),
-                n_sims_lt=sum(1 for s in sims_output if s < self.obs),
+    @classmethod
+    def sim_compare(cls, obs, sims_output):
+        n = len(sims_output)
+        d = dict(observed=obs,
+                n_sims=n,
+                n_sims_gt=sum(1 for s in sims_output if s > obs),
+                n_sims_eq=sum(1 for s in sims_output if s == obs),
+                n_sims_lt=sum(1 for s in sims_output if s < obs),
             )
-        d['p_sims_gt'] = d['n_sims_gt'] / float(self.n)
-        d['p_sims_lt'] = d['n_sims_lt'] / float(self.n)
+        d['p_sims_gt'] = d['n_sims_gt'] / float(n)
+        d['p_sims_lt'] = d['n_sims_lt'] / float(n)
+        return d
+
+    def compare(self, sims_output):
+        d = Shuffler.sim_compare(self.obs, sims_output)
         d['value_fuction'] = self.value_fn.func_name
         return d
 
@@ -79,13 +92,31 @@ def num_intersections(res):
 
 if __name__ == "__main__":
 
-    print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
+    SEED = 1123
+    N_SIMS = 200
+
+    early = Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
         '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        jaccard_value, n=100).run()
-    print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-        '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        jaccard_length, n=100).run()
+        jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
+    late = Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
+        '~/with_Brent/LOH_repli/data/features/data_e_constant_late.bed', 'hg18',
+        jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
+
+    print Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
+                        / float(l) for e, l in zip(early['sims'], late['sims'])])
+
+
+    #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
+    #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
+    #    jaccard_value, n=100, shuffle_str="-excl ~/with_Brent/LOH_repli/data/features/bedtools.hg18.centromere").run()
+    1/0
+
 
     print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
         '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        num_intersections, n=100).run("bedtools intersect -a %(query)s -b %(subject)s | wc -l")
+        jaccard_length, n=10).run()
+
+    print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
+        '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
+        num_intersections, n=100).run("bedtools intersect -a %(query)s -b %(subject)s -u | wc -l")
+
