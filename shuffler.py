@@ -16,9 +16,9 @@ class Shuffler(object):
             seed=None):
         # TODO -excl, -incl
 
-        self.query = query + ".sorted"
+        self.query = mktemp(suffix=".sorted")
         self.value_fn = value_fn
-        self.subject = subject + ".sorted"
+        self.subject = mktemp(suffix=".sorted")
         _run("sort -k1,1 -k2,2n %s > %s" % (query, self.query))
         _run("sort -k1,1 -k2,2n %s > %s" % (subject, self.subject))
         self.n = n
@@ -95,16 +95,32 @@ if __name__ == "__main__":
     SEED = 1123
     N_SIMS = 200
 
-    early = Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-        '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
-    late = Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-        '~/with_Brent/LOH_repli/data/features/data_e_constant_late.bed', 'hg18',
-        jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
+    BASE = "/home/brentp/with_Brent/"
 
-    print Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
-                        / float(l) for e, l in zip(early['sims'], late['sims'])])
+    import sys
+    sys.path.insert(0, "%s/LOH_age/src/" % BASE)
+    import lohcna
 
+    def shuff_compare(fname):
+        early = Shuffler(fname,
+            '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE, 'hg18',
+            jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
+
+        late = Shuffler(fname,
+            '%s/LOH_repli/data/features/data_e_constant_late.bed' % BASE, 'hg18',
+            jaccard_length, n=N_SIMS, seed=SEED).run(sims=True)
+
+        return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
+                        / float(l) for e, l in zip(early['sims'],
+                            late['sims'])])['p_sims_gt']
+
+
+    fnames = reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt' % BASE,
+            header=False)
+    for fname, in fnames:
+        name = mktemp()
+        lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
+        print shuff_compare(name)
 
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
     #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
