@@ -16,9 +16,11 @@ class Shuffler(object):
     values after n shufflings of the query compared to the same subject.
     """
     def __init__(self, query, subject, genome, value_fn, n=10, shuffle_str="",
-            seed=None, map=imap):
+            seed=None, map=imap, temp_dir="/tmp/"):
         # TODO -excl, -incl
         self.suffix = mktemp(dir='')
+
+        self.temp_dir = temp_dir
 
         if isinstance(map, (int, long)):
             import multiprocessing
@@ -27,44 +29,47 @@ class Shuffler(object):
         else:
             self.map = map
 
-        self.query = mktemp(suffix=".sorted.%s" % self.suffix)
+        self.query = mktemp(suffix=".sorted.%s" % self.suffix, dir=self.temp_dir)
         self.value_fn = value_fn
-        self.subject = mktemp(suffix=".sorted.%s" % self.suffix)
+        self.subject = mktemp(suffix=".sorted.%s" % self.suffix, dir=self.temp_dir)
         _run("sort -k1,1 -k2,2n %s > %s" % (query, self.query))
         _run("sort -k1,1 -k2,2n %s > %s" % (subject, self.subject))
         self.n = n
         if not os.path.exists(genome):
-            self.genome = mktemp(suffix="." + genome + ".%s" % self.suffix)
-            _run('mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e \
-                "select chrom, size from %s.chromInfo" > %s' % (genome, self.genome))
+            self.genome_file = mktemp(suffix="." + genome + ".%s" % self.suffix,
+                    dir=self.temp_dir)
+            Shuffler.genome(genome, self.genome_file)
         else:
-            self.genome = genome
+            self.genome_file = genome
 
         self.shuffle_str = shuffle_str
         self.seed = random.randint(0, sys.maxint) if seed is None else seed
 
+    @classmethod
+    def genome(cls, genome, outf):
+        _run('mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e \
+                "select chrom, size from %s.chromInfo" > %s' % (genome, outf))
+        return outf
+
     def __del__(self):
 
-        for f in glob.glob("/tmp/*.sorted.%s" % self.suffix):
+        for f in glob.glob("%s/*.sorted.%s" % (self.temp_dir, self.suffix)):
             os.unlink(f)
-        if getattr(self, "genome", "").endswith(self.suffix):
-            os.unlink(self.genome)
+        if getattr(self, "genome_file", "").endswith(self.suffix):
+            os.unlink(self.genome_file)
 
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
             sims=False):
-        self.obs = _command(command, dict(query=self.query,
-            subject=self.subject), self.value_fn)
+        args= dict(query=self.query, subject=self.subject)
+        self.obs = self.value_fn(nopen("|%s" % (command % args)))
 
         # call external functions self.map may be Pool.imap
         # must use list-comp here not generator to make sure they are same
         # order for same seed.
         sims = self.map(_shuffle_and_run_star, [(i + self.seed, self.shuffle_str, self.query,
-            self.subject, self.genome, command, self.value_fn) for i in
+            self.subject, self.genome_file, self.temp_dir, command, self.value_fn) for i in
             xrange(self.n)])
 
-        #for i in xrange(self.n):
-        #    sims.append(_shuffle_and_run(self.shuffle_str,
-        #        self.query, self.subject, self.genome, command, self.value_fn))
         if not isinstance(sims, list):
             sims = list(sims)
         compare = self.compare(sims)
@@ -95,24 +100,16 @@ def _shuffle_and_run_star(args):
     random.seed(args[0])
     return _shuffle_and_run(*args[1:])
 
-def _shuffle_and_run(shuffle_str, query, subject, genome, command, value_fn):
-    temp = _shuffle(shuffle_str, query, genome)
-    args_dict = dict(query=temp, subject=subject)
-    res = _command(command, args_dict, value_fn)
-    os.unlink(temp)
-    return res
-
-def _command(command, args_dict, value_fn):
-    res = nopen("|%s" % (command % args_dict))
-    return value_fn(res)
-
-def _shuffle(shuffle_str, query, genome):
-    temp = mktemp(suffix=".shuffled")
+def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, value_fn):
     bed_seed = random.randint(0, sys.maxint)
-    _run('bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n > %s' %
-            (bed_seed, shuffle_str,
-            query, genome, temp))
-    return temp
+    temp = mktemp(suffix=".shuffled", dir=temp_dir)
+    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n > %s' \
+            % (bed_seed, shuffle_str, query, genome, temp)
+    full_command = "%s ;  %s; rm %s" % (shuffle_cmd, command, temp)
+    args_dict = dict(query=temp, subject=subject)
+    res_iter = nopen("|%s" % full_command % args_dict)
+    value = value_fn(res_iter)
+    return value
 
 # these are examples of value functions. they take an iterator
 # that is the return of the command specified to Shuffler.run()
@@ -135,7 +132,7 @@ def num_intersections(res):
 if __name__ == "__main__":
 
     SEED = 12221
-    N_SIMS = 1500
+    N_SIMS = 1000
 
     BASE = "/home/brentp/with_Brent/"
 
@@ -143,16 +140,28 @@ if __name__ == "__main__":
     sys.path.insert(0, "%s/LOH_age/src/" % BASE)
     import lohcna
 
-    imap = 18
+    import multiprocessing
+    p = multiprocessing.Pool(12,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    imap = p.imap
+    genome = '/dev/shm/hg18.genome'
+    if not os.path.exists(genome):
+        genome = Shuffler.genome('hg18', genome)
 
     def shuff_compare(fname):
+        shuff_str = "-maxTries 10"
         early = Shuffler(fname,
-            '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE, 'hg18',
-            jaccard_length, n=N_SIMS, seed=SEED, map=imap).run(sims=True)
+            '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE,
+            genome,
+            jaccard_length,
+            #shuffle_str=shuff_str,
+            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/").run(sims=True)
 
         late = Shuffler(fname,
-            '%s/LOH_repli/data/features/data_e_constant_late.bed' % BASE, 'hg18',
-            jaccard_length, n=N_SIMS, seed=SEED, map=imap).run(sims=True)
+            '%s/LOH_repli/data/features/data_e_constant_late.bed' % BASE,
+            genome,
+            jaccard_length,
+            #shuffle_str=shuff_str,
+            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/").run(sims=True)
 
         return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
                         / float(l) for e, l in zip(early['sims'],
@@ -161,10 +170,15 @@ if __name__ == "__main__":
 
     fnames = reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt' % BASE,
             header=False)
+    res = open('GBM.txt', 'w')
     for i, (fname,) in enumerate(fnames):
-        name = mktemp()
+        name = mktemp(dir="/dev/shm/")
         lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
-        print shuff_compare(name)
+        pair = (fname, shuff_compare(name))
+        print >>res, "%s\t%s" % pair
+        print >>sys.stderr, pair
+        os.unlink(name)
+        if i > 8: break
 
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
     #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
