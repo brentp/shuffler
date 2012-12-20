@@ -47,7 +47,7 @@ class Shuffler(object):
 
         for f in glob.glob("/tmp/*.sorted.%s" % self.suffix):
             os.unlink(f)
-        if self.genome.endswith(self.suffix):
+        if getattr(self, "genome", "").endswith(self.suffix):
             os.unlink(self.genome)
 
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
@@ -111,7 +111,7 @@ def _command(command, args_dict, value_fn):
 
 def _shuffle(shuffle_str, query, genome):
     temp = mktemp(suffix=".shuffled")
-    bed_seed = random.randint(0, 99999999999)
+    bed_seed = random.randint(0, sys.maxint)
     _run('bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n > %s' %
             (bed_seed, shuffle_str,
             query, genome, temp))
@@ -148,7 +148,6 @@ if __name__ == "__main__":
 
     imap = 18
 
-
     def shuff_compare(fname):
         early = Shuffler(fname,
             '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE, 'hg18',
@@ -169,7 +168,6 @@ if __name__ == "__main__":
         name = mktemp()
         lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
         print shuff_compare(name)
-        if i > 8: break
 
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
     #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
