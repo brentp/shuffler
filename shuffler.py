@@ -7,8 +7,7 @@ import sys
 import signal
 
 def _run(cmd):
-    if cmd.startswith("|"): cmd = cmd[1:]
-    list(nopen("|%s" % cmd))
+    list(nopen("|%s" % cmd.lstrip("|")))
 
 class Shuffler(object):
     """
@@ -42,7 +41,8 @@ class Shuffler(object):
             self.genome = genome
 
         self.shuffle_str = shuffle_str
-        self.seed = 0 if seed is None else seed
+        self.seed = random.randint(0, sys.maxint) if seed is None else seed
+
     def __del__(self):
 
         for f in glob.glob("/tmp/*.sorted.%s" % self.suffix):
@@ -71,7 +71,6 @@ class Shuffler(object):
         if sims: compare['sims'] = sims
         return compare
 
-
     @classmethod
     def sim_compare(cls, obs, sims_output):
         n = len(sims_output)
@@ -89,8 +88,6 @@ class Shuffler(object):
         d = Shuffler.sim_compare(self.obs, sims_output)
         d['value_fuction'] = self.value_fn.func_name
         return d
-
-
 
 def _shuffle_and_run_star(args):
     #print "seed:", args[0],
