@@ -1,6 +1,7 @@
 from toolshed import reader, nopen
 from tempfile import mktemp
 from itertools import imap
+import itertools
 import random
 import os, glob
 import sys
@@ -131,8 +132,8 @@ def num_intersections(res):
 
 if __name__ == "__main__":
 
-    SEED = 12221
-    N_SIMS = 1000
+    SEED = 122212
+    N_SIMS = 10000
 
     BASE = "/home/brentp/with_Brent/"
 
@@ -141,7 +142,7 @@ if __name__ == "__main__":
     import lohcna
 
     import multiprocessing
-    p = multiprocessing.Pool(12,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    p = multiprocessing.Pool(16,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
     imap = p.imap
     genome = '/dev/shm/hg18.genome'
     if not os.path.exists(genome):
@@ -163,22 +164,32 @@ if __name__ == "__main__":
             #shuffle_str=shuff_str,
             n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/").run(sims=True)
 
-        return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
+        try:
+            return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
                         / float(l) for e, l in zip(early['sims'],
                             late['sims'])])['p_sims_gt']
+        except:
+            return "NA"
 
+    # res = open('OV.txt', 'w')
+    # '%s/LOH_repli/data/filelist_OV_f0_HAIB__Human1MDuo.txt'
+    fnames = [x[0] for x in reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt'
+            % BASE, header=False)]
+    res = open('%s/LOH_repli/data/GBMall.txt' % BASE, 'w')
+    for i, f in enumerate(fnames):
+        for j, line in enumerate(open('%s/LOH_repli/data/%s' % (BASE, f))):
+            if j == 0 and i > 0: continue
+            res.write(line)
+    res.close()
+    fnames = ['GBMall.txt']
 
-    fnames = reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt' % BASE,
-            header=False)
-    res = open('GBM.txt', 'w')
-    for i, (fname,) in enumerate(fnames):
+    for i, fname in enumerate(fnames):
         name = mktemp(dir="/dev/shm/")
         lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
         pair = (fname, shuff_compare(name))
-        print >>res, "%s\t%s" % pair
         print >>sys.stderr, pair
+        print >>res, "%s\t%s" % pair
         os.unlink(name)
-        if i > 8: break
 
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
     #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
