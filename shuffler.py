@@ -69,6 +69,22 @@ class Shuffler(object):
                 "select chrom, size from %s.chromInfo" > %s' % (genome, outf))
         return outf
 
+    @classmethod
+    def plot(self, sims, png):
+        import matplotlib
+        matplotlib.use('Agg')
+        from matplotlib import pyplot as plt
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1)
+        ax.set_title("%i shufflings" % len(sims['sims']))
+        ax.set_xlabel(sims['value_function'])
+        ax.set_ylabel('count')
+        n, bins, patches = ax.hist(sims['sims'], 20, normed=0, facecolor='green', alpha=0.75)
+        red = ax.axvline(x=sims['observed'], color='r')
+        ax.legend( (red, patches[0]), ('observed', 'simulated'))
+
+        plt.savefig(png)
+
     def __del__(self):
 
         if getattr(self, "domain"):
@@ -112,7 +128,7 @@ class Shuffler(object):
 
     def compare(self, sims_output):
         d = Shuffler.sim_compare(self.obs, sims_output)
-        d['value_fuction'] = self.value_fn.func_name
+        d['value_function'] = self.value_fn.func_name
         return d
 
 def _shuffle_and_run_star(args):
