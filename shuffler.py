@@ -16,6 +16,7 @@ class Shuffler(object):
     compare the original [value] of query and subject with the
     values after n shufflings of the query compared to the same subject.
     """
+    domain = None
     def __init__(self, query, subject, genome, value_fn, n=10, shuffle_str="",
             seed=None, map=imap, temp_dir="/tmp/"):
         # TODO -excl, -incl
@@ -46,6 +47,22 @@ class Shuffler(object):
         self.shuffle_str = shuffle_str
         self.seed = random.randint(0, sys.maxint) if seed is None else seed
 
+    def set_domain(self, domain_file, pad=5000):
+        """
+        file(s) that indicate(s) which regions for which to allow shuffling.
+        these are also applied to the query and the subject.
+        """
+        self.domain = mktemp(suffix=".domain.%s" % self.suffix, dir=self.temp_dir)
+        _run("bedtools slop -b %i -g %s -i %s > %s" % (pad, self.genome_file, domain_file, self.domain))
+        for attr in ('query', 'subject'):
+            new_file = mktemp(suffix=".sorted.%s" % self.suffix, dir=self.temp_dir)
+            old_file = getattr(self, attr)
+            _run("bedtools intersect -a %s -b %s -u | sort -k1,1 -k2,2n > %s" %
+                                (old_file, self.domain, new_file))
+            setattr(self, attr, new_file)
+            os.unlink(old_file)
+        self.shuffle_str = "-incl %s" % self.domain
+
     @classmethod
     def genome(cls, genome, outf):
         _run('mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e \
@@ -53,6 +70,9 @@ class Shuffler(object):
         return outf
 
     def __del__(self):
+
+        if getattr(self, "domain"):
+            os.unlink(self.domain)
 
         for f in glob.glob("%s/*.sorted.%s" % (self.temp_dir, self.suffix)):
             os.unlink(f)
@@ -67,14 +87,14 @@ class Shuffler(object):
         # call external functions self.map may be Pool.imap
         # must use list-comp here not generator to make sure they are same
         # order for same seed.
-        sims = self.map(_shuffle_and_run_star, [(i + self.seed, self.shuffle_str, self.query,
+        sim_list = self.map(_shuffle_and_run_star, [(i + self.seed, self.shuffle_str, self.query,
             self.subject, self.genome_file, self.temp_dir, command, self.value_fn) for i in
             xrange(self.n)])
 
-        if not isinstance(sims, list):
-            sims = list(sims)
-        compare = self.compare(sims)
-        if sims: compare['sims'] = sims
+        if not isinstance(sim_list, list):
+            sim_list = list(sim_list)
+        compare = self.compare(sim_list)
+        if sims: compare['sims'] = sim_list
         return compare
 
     @classmethod
