@@ -52,6 +52,7 @@ class Shuffler(object):
         file(s) that indicate(s) which regions for which to allow shuffling.
         these are also applied to the query and the subject.
         """
+        # TODO merge or union domain after multiple calls.
         self.domain = mktemp(suffix=".domain.%s" % self.suffix, dir=self.temp_dir)
         _run("bedtools slop -b %i -g %s -i %s > %s" % (pad, self.genome_file, domain_file, self.domain))
         for attr in ('query', 'subject'):
@@ -170,9 +171,9 @@ def num_intersections(res):
 if __name__ == "__main__":
 
     SEED = 122212
-    N_SIMS = 100
+    N_SIMS = 1000
 
-    BASE = "/vol2/home/brentp/with_Brent/"
+    BASE = "/home/brentp/with_Brent/"
 
     import sys
     sys.path.insert(0, "%s/LOH_age/src/" % BASE)
@@ -230,9 +231,9 @@ if __name__ == "__main__":
     for i, fname in enumerate(fnames):
         name = mktemp(dir="/dev/shm/")
         lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
-        domain = mktemp(dir="/dev/shm/")
-        _run("sort -k1,1 -k2,2n %s | bedtools merge -d 20000 -g %s -i - > %s",
-                (name, genome, domain))
+        domain = 'domain.bed'
+        _run("sort -k1,1 -k2,2n %s | bedtools merge -d 5000 -i - > %s" %
+                (name, domain))
         pair = (fname, shuff_compare(name, domain))
         print >>sys.stderr, pair
         print >>res, "%s\t%s" % pair
