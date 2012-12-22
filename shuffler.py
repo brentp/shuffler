@@ -97,7 +97,8 @@ class Shuffler(object):
 
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
             sims=False):
-        args= dict(query=self.query, subject=self.subject)
+        args = dict(query=self.query, subject=self.subject)
+        print command % args
         self.obs = self.value_fn(nopen("|%s" % (command % args)))
 
         # call external functions self.map may be Pool.imap
@@ -169,9 +170,9 @@ def num_intersections(res):
 if __name__ == "__main__":
 
     SEED = 122212
-    N_SIMS = 10000
+    N_SIMS = 100
 
-    BASE = "/home/brentp/with_Brent/"
+    BASE = "/vol2/home/brentp/with_Brent/"
 
     import sys
     sys.path.insert(0, "%s/LOH_age/src/" % BASE)
@@ -184,21 +185,28 @@ if __name__ == "__main__":
     if not os.path.exists(genome):
         genome = Shuffler.genome('hg18', genome)
 
-    def shuff_compare(fname):
+    def shuff_compare(fname, domain=None):
         shuff_str = "-maxTries 10"
         early = Shuffler(fname,
             '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE,
             genome,
             jaccard_length,
             #shuffle_str=shuff_str,
-            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/").run(sims=True)
+            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/")
+        if domain:
+            early.set_domain(domain)
+        early = early.run(sims=True)
 
         late = Shuffler(fname,
             '%s/LOH_repli/data/features/data_e_constant_late.bed' % BASE,
             genome,
             jaccard_length,
             #shuffle_str=shuff_str,
-            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/").run(sims=True)
+            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/")
+        if domain:
+            late.set_domain(domain)
+
+        late = late.run(sims=True)
 
         try:
             return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
@@ -222,7 +230,10 @@ if __name__ == "__main__":
     for i, fname in enumerate(fnames):
         name = mktemp(dir="/dev/shm/")
         lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
-        pair = (fname, shuff_compare(name))
+        domain = mktemp(dir="/dev/shm/")
+        _run("sort -k1,1 -k2,2n %s | bedtools merge -d 20000 -g %s -i - > %s",
+                (name, genome, domain))
+        pair = (fname, shuff_compare(name, domain))
         print >>sys.stderr, pair
         print >>res, "%s\t%s" % pair
         os.unlink(name)
