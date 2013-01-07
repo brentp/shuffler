@@ -99,7 +99,7 @@ class Shuffler(object):
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
             sims=False):
         args = dict(query=self.query, subject=self.subject)
-        print command % args
+        #print command % args
         self.obs = self.value_fn(nopen("|%s" % (command % args)))
 
         # call external functions self.map may be Pool.imap
@@ -141,11 +141,10 @@ def _shuffle_and_run_star(args):
 
 def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, value_fn):
     bed_seed = random.randint(0, sys.maxint)
-    temp = mktemp(suffix=".shuffled", dir=temp_dir)
-    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n > %s' \
-            % (bed_seed, shuffle_str, query, genome, temp)
-    full_command = "%s ;  %s; rm %s" % (shuffle_cmd, command, temp)
-    args_dict = dict(query=temp, subject=subject)
+    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n ' \
+            % (bed_seed, shuffle_str, query, genome)
+    full_command = "%s |  %s" % (shuffle_cmd, command)
+    args_dict = dict(query="-", subject=subject)
     res_iter = nopen("|%s" % full_command % args_dict)
     value = value_fn(res_iter)
     return value
@@ -180,7 +179,7 @@ if __name__ == "__main__":
     import lohcna
 
     import multiprocessing
-    p = multiprocessing.Pool(16,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+    p = multiprocessing.Pool(12,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
     imap = p.imap
     genome = '/dev/shm/hg18.genome'
     if not os.path.exists(genome):
@@ -220,6 +219,7 @@ if __name__ == "__main__":
     # '%s/LOH_repli/data/filelist_OV_f0_HAIB__Human1MDuo.txt'
     fnames = [x[0] for x in reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt'
             % BASE, header=False)]
+    """
     res = open('%s/LOH_repli/data/GBMall.txt' % BASE, 'w')
     for i, f in enumerate(fnames):
         for j, line in enumerate(open('%s/LOH_repli/data/%s' % (BASE, f))):
@@ -227,6 +227,7 @@ if __name__ == "__main__":
             res.write(line)
     res.close()
     fnames = ['GBMall.txt']
+    """
 
     for i, fname in enumerate(fnames):
         name = mktemp(dir="/dev/shm/")
@@ -236,7 +237,7 @@ if __name__ == "__main__":
                 (name, domain))
         pair = (fname, shuff_compare(name, domain))
         print >>sys.stderr, pair
-        print >>res, "%s\t%s" % pair
+        #print >>res, "%s\t%s" % pair
         os.unlink(name)
 
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
