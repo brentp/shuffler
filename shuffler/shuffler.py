@@ -1,7 +1,6 @@
 from toolshed import reader, nopen
 from tempfile import mktemp
 from itertools import imap
-import itertools
 import random
 import os, glob
 import sys

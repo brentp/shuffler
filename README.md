@@ -5,24 +5,46 @@ e.g. total bases of overlap between the 2 sets, or number of overlaps.
 
 parameters: 
 
-    -n: (optional, default=1000) number of shufflings
+    ------
+    inputs
+    ------
 
-    -a: bed file (the -a file is always shuffled) 
+     -a: bed file (the -a file is always shuffled) 
 
-    -b: bed file (the -b file is *NEVER* shuffled) 
+     -b: bed file (the -b file is *NEVER* shuffled) 
 
-    --domain: (optional) shuffle -a intervals inside this domain.
+    -----------
+    constraints 
+    -----------
+    
+     --domain: (optional) shuffle -a intervals inside this domain.
+     --include: [same as domain] may be specified multiple times.
 
-    --metric: (optional, default=overlap [n_overlaps, etc. also accepted. can
+     --exclude: (optional) do not allow shuffled intervals to land in the
+               intervals specified in this file (may be specified multiple
+               times)
+    
+     --metric: (optional, default=overlap [n_overlaps, etc. also accepted. can
               also be a bash command, e.g.:
-              'awk "BEGIN{s=0}{s+=$3-$2}END{print s}"'])
-              the value to compare the between observed and shuffled.
+                'awk "BEGIN{s=0}{s+=$3-$2}END{print s}"'])
+              or anything that accepts intervals to stdin and prints a number
+              to stdout: eg:
+                'python interval-accepter.py'
+              the metric is value to compare the between observed and shuffled.
+
+     -g: genome version (to get chromosomes), e.g. mm8, dm3, hg19 or a file
+
+
+    ----
+    misc
+    ----
+
+     -n: (optional, default=1000) number of shufflings
              
-    -t: (optional, default=1) number of threads to use.
+     -t: (optional, default=1) number of threads to use.
 
-    -g: genome version (to get chromosomes), e.g. mm8, dm3, hg19 or a file
+     --seed: (optional) seed for the random number generator
 
-    --seed: (optional) seed for the random number generator
 
 call like:
 
@@ -70,4 +92,12 @@ will extend each domain intervla by 10KB.
 
 
 
+todo
+----
 
+see genome-wide plot (fig 2) and bi-plot (fig6) in zhang et al:
+"Statistical analysis of the genomic distribution and correlation of regulatory elements in the ENCODE regions"
+http://genome.cshlp.org/content/17/6/787.full.pdf
+
+
+clustered-ness of regions within a single file
