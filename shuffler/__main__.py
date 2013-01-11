@@ -7,7 +7,7 @@ e.g. total bases of overlap between the 2 sets, or number of overlaps.
 import argparse
 import sys
 
-shuffling_constraints_doc = """\
+shuffling_constraints_doc = """
     each of these specify some constraint on where to send the randomized
     intervals. any of them can be padded using a syntax like:
         -a query.bed:1000
@@ -25,9 +25,11 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                    formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    g_inputs = p.add_argument_group("inputs", "inputs")
-    g_inputs.add_argument("-a", help="bed file (the -a file is always shuffled)")
-    g_inputs.add_argument("-b", help="bed file (the -b file is never shuffled)")
+    g_inputs = p.add_argument_group("input intervals")
+    g_inputs.add_argument("-a", metavar="SHUFFLED",
+            help="bed file (the -a file is always shuffled)")
+    g_inputs.add_argument("-b", metavar="UNSHUFFLED",
+            help="bed file (the -b file is never shuffled)")
 
     g_constraints = p.add_argument_group("shuffling constraints",
             shuffling_constraints_doc)
