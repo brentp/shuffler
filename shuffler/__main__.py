@@ -35,12 +35,15 @@ def main():
             shuffling_constraints_doc)
     g_constraints.add_argument("-g", help=
         "genome version (to get chromosomes), e.g. mm8, dm3, hg19 or a file")
-    g_constraints.add_argument("--domain", "--include",
+    # can have --domain or --domains not both
+    g_doms = g_constraints.add_mutually_exclusive_group()
+    g_doms.add_argument("--domain", "--include",
             help="(optional) shuffle -a intervals inside this domain. "
             "(may be specified multiple times)")
-    g_constraints.add_argument("--domains", help=
+    g_doms.add_argument("--domains", help=
             "like domain, but the 4th column is used to split into separate "
             "domains a value is returned for each of the sub-domains")
+    #
     g_constraints.add_argument("--exclude", help=
         "(optional) do not allow shuffled intervals to land in the "
         "intervals specified in this file (may be specified "
