@@ -177,9 +177,7 @@ if __name__ == "__main__":
     sys.path.insert(0, "%s/LOH_age/src/" % BASE)
     import lohcna
 
-    import multiprocessing
-    p = multiprocessing.Pool(12,  lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
-    imap = p.imap
+    imap = 18
     genome = '/dev/shm/hg18.genome'
     if not os.path.exists(genome):
         genome = Shuffler.genome('hg18', genome)
@@ -210,35 +208,40 @@ if __name__ == "__main__":
         try:
             return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
                         / float(l) for e, l in zip(early['sims'],
-                            late['sims'])])['p_sims_gt']
+                            late['sims']) if l > 0])['p_sims_gt']
         except:
+            raise
             return "NA"
 
-    # res = open('OV.txt', 'w')
-    # '%s/LOH_repli/data/filelist_OV_f0_HAIB__Human1MDuo.txt'
-    fnames = [x[0] for x in reader('%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt'
-            % BASE, header=False)]
-    """
-    res = open('%s/LOH_repli/data/GBMall.txt' % BASE, 'w')
-    for i, f in enumerate(fnames):
-        for j, line in enumerate(open('%s/LOH_repli/data/%s' % (BASE, f))):
-            if j == 0 and i > 0: continue
-            res.write(line)
-    res.close()
-    fnames = ['GBMall.txt']
-    """
+    for oname, ibase in (('OV.txt', '%s/LOH_repli/data/filelist_OV_f0_HAIB__Human1MDuo.txt'),
+                        ('GBM.txt', '%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt')):
+         
+        res = open(oname, 'w')
+        resall = open(oname + ".all", "w")
+        fnames = [x[0] for x in reader(ibase % BASE, header=False)]
+        for i, f in enumerate(fnames):
+            for j, line in enumerate(open('%s/LOH_repli/data/%s' % (BASE, f))):
+                if j == 0 and i > 0: continue
+                resall.write(line)
+        resall.close()
+        fnames.insert(0, resall.name)
 
-    for i, fname in enumerate(fnames):
-        name = mktemp(dir="/dev/shm/")
-        lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
         domain = 'domain.bed'
-        _run("sort -k1,1 -k2,2n %s | bedtools merge -d 5000 -i - > %s" %
-                (name, domain))
-        pair = (fname, shuff_compare(name, domain))
-        print >>sys.stderr, pair
-        #print >>res, "%s\t%s" % pair
-        os.unlink(name)
+        domain = None
+        for i, fname in enumerate(fnames):
+            name = mktemp(dir="/dev/shm/")
+            if fname.endswith(".all"):
+                lohcna.to_bed(fname, name, lohcna.loh_fn)
+            else:
+                lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
+            #_run("sort -k1,1 -k2,2n %s | bedtools merge -d 5000 -i - > %s" %
+            #        (name, domain))
+            pair = (fname, shuff_compare(name, domain))
+            print >>sys.stderr, oname, pair
+            print >>res, "%s\t%s" % pair
+            os.unlink(name)
 
+    1/0
     #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
     #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
     #    jaccard_value, n=100, shuffle_str="-excl ~/with_Brent/LOH_repli/data/features/bedtools.hg18.centromere").run()
