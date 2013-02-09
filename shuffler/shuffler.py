@@ -205,17 +205,13 @@ if __name__ == "__main__":
 
         late = late.run(sims=True)
 
-        try:
-            return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
+        return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
                         / float(l) for e, l in zip(early['sims'],
                             late['sims']) if l > 0])['p_sims_gt']
-        except:
-            raise
-            return "NA"
 
-    for oname, ibase in (('OV.txt', '%s/LOH_repli/data/filelist_OV_f0_HAIB__Human1MDuo.txt'),
-                        ('GBM.txt', '%s/LOH_repli/data/filelist_GBM_f0_HAIB__HumanHap550.txt')):
-         
+    for oname, ibase in (('OV.txt', '%s/LOH_repli/data/filelist_OV_f2_HAIB__Human1MDuo.txt'),
+                        ('GBM.txt', '%s/LOH_repli/data/filelist_GBM_f2_HAIB__HumanHap550.txt')):
+
         res = open(oname, 'w')
         resall = open(oname + ".all", "w")
         fnames = [x[0] for x in reader(ibase % BASE, header=False)]
