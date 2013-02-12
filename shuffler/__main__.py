@@ -22,7 +22,8 @@ shuffling_constraints_doc = """
 import random
 from toolshed import reader, nopen
 from .files import stream_file
-from .shuffler import Shuffler, jaccard_value
+from .shuffler import Shuffler, jaccard_value, jaccard_length \
+        , num_intersections
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -76,12 +77,31 @@ def tofile(fiter, fname):
     fh.close()
     return fname
 
+class _wrapper_fn(object):
+    def __init__(self, command_string):
+        self.command_string = command_string
+        self.func_name = command_string
+    def __call__(self, fh):
+        out = open(tempfile.mktemp(dir="/tmp/"), "w")
+        print out.name
+        for row in fh:
+            out.write(row)
+        out.close()
+        value = nopen("%s < %s" % (self.command_string, out.name)).next()
+        return int(value)
+
 def shuffle(args):
 
     a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp"))
     b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp"))
 
     value_fn = args.metric
+    if isinstance(value_fn, basestring):
+        try:
+            value_fn = globals()[value_fn]
+        except KeyError:
+            command_string = "|" + value_fn.lstrip("|")
+            value_fn = _wrapper_fn(command_string)
 
     s = Shuffler(a, b, args.genome, value_fn, n=args.n,
                    seed=args.seed, map=args.threads if args.threads > None else map)
