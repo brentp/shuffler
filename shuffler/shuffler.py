@@ -71,8 +71,9 @@ class Shuffler(object):
 
     @classmethod
     def plot(self, sims, png):
-        import matplotlib
-        matplotlib.use('Agg')
+        if not 'matplotlib.backends' in sys.modules:
+            import matplotlib
+            matplotlib.use('Agg')
         from matplotlib import pyplot as plt
         fig = plt.figure()
         ax = fig.add_subplot(1, 1, 1)
@@ -155,7 +156,8 @@ def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, val
 def jaccard_length(res):
     for i, row in enumerate(res):
         row = row.split("\t")
-        if row[0].isdigit(): return int(row[0])
+        if row[0].isdigit():
+            return int(row[0])
 
 def jaccard_value(res):
     for i, row in enumerate(res):

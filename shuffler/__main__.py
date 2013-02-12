@@ -6,6 +6,7 @@ e.g. total bases of overlap between the 2 sets, or number of overlaps.
 """
 import argparse
 import sys
+import tempfile
 
 shuffling_constraints_doc = """
     each of these specify some constraint on where to send the randomized
@@ -19,7 +20,9 @@ shuffling_constraints_doc = """
 """
 
 import random
-from toolshed import reader
+from toolshed import reader, nopen
+from .files import stream_file
+from .shuffler import Shuffler, jaccard_value
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -33,11 +36,11 @@ def main():
 
     g_constraints = p.add_argument_group("shuffling constraints",
             shuffling_constraints_doc)
-    g_constraints.add_argument("-g", help=
+    g_constraints.add_argument("-g", dest="genome", help=
         "genome version (to get chromosomes), e.g. mm8, dm3, hg19 or a file")
     # can have --domain or --domains not both
     g_doms = g_constraints.add_mutually_exclusive_group()
-    g_doms.add_argument("--domain", "--include",
+    g_doms.add_argument("--domain", "--include", dest="domain",
             help="(optional) shuffle -a intervals inside this domain. "
             "(may be specified multiple times)")
     g_doms.add_argument("--domains", help=
@@ -55,13 +58,34 @@ def main():
             default=1000)
     p.add_argument("-t", dest="threads", help="(optional) number of threads to use",
             type=int, default=1)
-    p.add_argument("--seed", dest="seed", help="(optional) seed for random "
+    p.add_argument("--seed", help="(optional) seed for random "
             "number generator", type=int, default=random.seed())
-
+    p.add_argument("--metric", help="metric by which to evaluate overlap",
+            default=jaccard_value)
 
     args = p.parse_args()
     if (args.a is None or args.b is None):
         sys.exit(not p.print_help())
+
+    shuffle(args)
+
+def tofile(fiter, fname):
+    fh = nopen(fname, "w")
+    for line in fiter:
+        print >>fh, line
+    fh.close()
+    return fname
+
+def shuffle(args):
+
+    a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp"))
+    b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp"))
+
+    value_fn = args.metric
+
+    s = Shuffler(a, b, args.genome, value_fn, n=args.n,
+                   seed=args.seed, map=args.threads if args.threads > None else map)
+    print "%.3g" % s.run()['p_sims_gt']
 
 
 if __name__ == "__main__":

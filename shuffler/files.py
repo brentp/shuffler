@@ -3,7 +3,7 @@ import sys
 
 def stream_file(f, pad_info=None):
     if pad_info is None:
-        pad_info = dict(upstream=0, downstream=0)
+        pad_info = parse_file_pad(f)
 
     if pad_info['upstream'] == pad_info['downstream'] == 0:
         for line in nopen(f):
@@ -82,7 +82,6 @@ def parse_file_pad(fname):
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
-
 
     info = parse_file_pad(sys.argv[1])
     print info["file"], info
