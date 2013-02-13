@@ -96,16 +96,20 @@ def shuffle(args):
     b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp"))
 
     value_fn = args.metric
+    command = "bedtools jaccard -a %(query)s -b %(subject)s"
     if isinstance(value_fn, basestring):
         try:
+            if value_fn == "num_intersections":
+                command = "bedtools intersect -a %(query)s -b %(subject)s | wc -l"
             value_fn = globals()[value_fn]
         except KeyError:
             command_string = "|" + value_fn.lstrip("|")
             value_fn = _wrapper_fn(command_string)
+            command = "bedtools intersect -a %(query)s -b %(subject)s"
 
     s = Shuffler(a, b, args.genome, value_fn, n=args.n,
                    seed=args.seed, map=args.threads if args.threads > None else map)
-    print "%.3g" % s.run()['p_sims_gt']
+    print s.run(command=command, sims=True)
 
 
 if __name__ == "__main__":
