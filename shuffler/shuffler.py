@@ -70,21 +70,27 @@ class Shuffler(object):
         return outf
 
     @classmethod
-    def plot(self, sims, png):
+    def plot(self, sims, png=None, ax=None):
         if not 'matplotlib.backends' in sys.modules:
             import matplotlib
             matplotlib.use('Agg')
         from matplotlib import pyplot as plt
-        fig = plt.figure()
-        ax = fig.add_subplot(1, 1, 1)
-        ax.set_title("%i shufflings" % len(sims['sims']))
-        ax.set_xlabel(sims['value_function'])
-        ax.set_ylabel('count')
-        n, bins, patches = ax.hist(sims['sims'], 20, normed=0, facecolor='green', alpha=0.75)
-        red = ax.axvline(x=sims['observed'], color='r')
-        ax.legend( (red, patches[0]), ('observed', 'simulated'))
+        if ax is None:
+            fig = plt.figure()
+            ax = fig.add_subplot(1, 1, 1)
 
-        plt.savefig(png)
+            ax.set_title("%i shufflings" % len(sims['sims']))
+            #ax.set_xlabel(sims['value_function'])
+            ax.set_ylabel('count')
+        n, bins, patches = ax.hist(sims['sims'], 20, normed=0,
+                facecolor='green', alpha=0.75, edgecolor='green',
+                rwidth=1.0)
+        red = ax.axvline(x=sims['observed'], color='grey', linewidth=4,
+                alpha=0.5)
+        if png is not None:
+            ax.legend( (red, patches[0]), ('observed', 'simulated'))
+            plt.savefig(png)
+        return ax
 
     def __del__(self):
 
