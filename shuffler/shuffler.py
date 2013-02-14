@@ -9,6 +9,14 @@ import signal
 def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
 
+def jaccard_values(res, keys="intersection union jaccard n_intersection".split()):
+    for i, row in enumerate(res):
+        row = row.split("\t")
+        if row[0].isdigit():
+            return dict(zip(keys,
+                int(row[0]), int(row[1]), float(row[2]), int(row[3])))
+    raise Exception("not found")
+
 class Shuffler(object):
     """
     given a query and a subject
@@ -16,7 +24,7 @@ class Shuffler(object):
     values after n shufflings of the query compared to the same subject.
     """
     domain = None
-    def __init__(self, query, subject, genome, value_fn, n=10, shuffle_str="",
+    def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10, shuffle_str="",
             seed=None, map=imap, temp_dir="/tmp/"):
         # TODO -excl, -incl
         self.suffix = mktemp(dir='')
@@ -102,8 +110,10 @@ class Shuffler(object):
         if getattr(self, "genome_file", "").endswith(self.suffix):
             os.unlink(self.genome_file)
 
-    def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s",
-            sims=False):
+    def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s", sims=False):
+        # jaccard not useful for most things.
+        if self.value_fn != jaccard_values and "jaccard" in command:
+            command = "bedtools intersect -a %(query)s -b %(subject)s -wo"
         args = dict(query=self.query, subject=self.subject)
         #print command % args
         self.obs = self.value_fn(nopen("|%s" % (command % args)))
@@ -117,27 +127,38 @@ class Shuffler(object):
 
         if not isinstance(sim_list, list):
             sim_list = list(sim_list)
-        compare = self.compare(sim_list)
-        if sims: compare['sims'] = sim_list
+        compare = self.compare(sim_list, sims=sims)
+        if "p_sims_gt" in compare:
+            compare['value_function'] = self.value_fn.func_name
         return compare
 
-    @classmethod
-    def sim_compare(cls, obs, sims_output):
-        n = len(sims_output)
-        d = dict(observed=obs,
-                n_sims=n,
-                n_sims_gt=sum(1 for s in sims_output if s > obs),
-                n_sims_eq=sum(1 for s in sims_output if s == obs),
-                n_sims_lt=sum(1 for s in sims_output if s < obs),
-            )
-        d['p_sims_gt'] = d['n_sims_gt'] / float(n)
-        d['p_sims_lt'] = d['n_sims_lt'] / float(n)
+    def compare(self, sims_output, sims=False):
+        d = Shuffler.sim_compare(self.obs, sims_output, sims)
         return d
 
-    def compare(self, sims_output):
-        d = Shuffler.sim_compare(self.obs, sims_output)
-        d['value_function'] = self.value_fn.func_name
+    @classmethod
+    def sim_compare(cls, obs, sims_output, sims=False):
+        assert isinstance(obs, dict)
+        assert len(sims_output[0].keys()) == len(obs.keys())
+        n = len(sims_output)
+        d = {'n_sims': n}
+        for metric in obs.keys():
+            d[metric] = dict(
+                observed=obs[metric],
+                # TODO: sims_output is list of dicts. less memory as dict of lists.
+                n_sims_gt=sum(1 for s in sims_output if s[metric] > obs[metric]),
+                n_sims_eq=sum(1 for s in sims_output if s[metric] == obs[metric]),
+                n_sims_lt=sum(1 for s in sims_output if s[metric] < obs[metric]),
+            )
+            d[metric]['p_sims_gt'] = d[metric]['n_sims_gt'] / float(n)
+            d[metric]['p_sims_lt'] = d[metric]['n_sims_lt'] / float(n)
+            if sims:
+                d[metric]['sims']=[s[metric] for s in sims_output]
+        if len(obs) == 1:
+            # if it's a single key we don't use the  metric sub-structure.
+            d.update(d.pop(obs.keys()[0]))
         return d
+
 
 def _shuffle_and_run_star(args):
     #print "seed:", args[0],
@@ -153,6 +174,7 @@ def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, val
     args_dict = dict(query="-", subject=subject)
     res_iter = nopen("|%s" % full_command % args_dict)
     value = value_fn(res_iter)
+    assert isinstance(value, dict)
     return value
 
 # these are examples of value functions. they take an iterator
@@ -163,16 +185,16 @@ def jaccard_length(res):
     for i, row in enumerate(res):
         row = row.split("\t")
         if row[0].isdigit():
-            return int(row[0])
+            return dict(length=int(row[0]))
 
 def jaccard_value(res):
     for i, row in enumerate(res):
         row = row.split("\t")
-        if row[0].isdigit(): return float(row[2])
+        if row[0].isdigit(): return dict(jaccard=float(row[2]))
 
 def num_intersections(res):
     r = res.next()
-    return int(r)
+    return dict(n_intersections=int(r))
 
 if __name__ == "__main__":
 
