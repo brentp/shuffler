@@ -113,7 +113,7 @@ class Shuffler(object):
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s", sims=False):
         # jaccard not useful for most things.
         if self.value_fn != jaccard_values and "jaccard" in command:
-            command = "bedtools intersect -a %(query)s -b %(subject)s -wo"
+            command = "bedtools intersect -sorted -a %(query)s -b %(subject)s -wo"
         args = dict(query=self.query, subject=self.subject)
         #print command % args
         self.obs = self.value_fn(nopen("|%s" % (command % args)))
