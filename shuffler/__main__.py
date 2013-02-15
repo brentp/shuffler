@@ -21,7 +21,7 @@ shuffling_constraints_doc = """
 
 import random
 from toolshed import reader, nopen
-from .files import stream_file
+from .files import stream_file, parse_file_pad
 from .shuffler import Shuffler, jaccard_values
 import atexit
 import os
@@ -33,8 +33,12 @@ def main():
     g_inputs = p.add_argument_group("input intervals")
     g_inputs.add_argument("-a", metavar="SHUFFLED",
             help="bed file (the -a file is always shuffled)")
-    g_inputs.add_argument("-b", metavar="UNSHUFFLED",
+
+    bs = g_inputs.add_mutually_exclusive_group()
+    bs.add_argument("-b", metavar="UNSHUFFLED",
             help="bed file (the -b file is never shuffled)")
+    bs.add_argument("--bs",
+            help="single bed file to be split on values in 4th column")
 
     g_constraints = p.add_argument_group("shuffling constraints",
             shuffling_constraints_doc)
@@ -67,7 +71,7 @@ def main():
     p.add_argument("--png", help="save a png of the distributions from the sims")
 
     args = p.parse_args()
-    if (args.a is None or args.b is None):
+    if (args.a is None or (args.b is None and args.bs == [])):
         sys.exit(not p.print_help())
 
     shuffle(args)
@@ -100,16 +104,24 @@ class _wrapper_fn(object):
 
 def plot(res, png):
     from matplotlib import pyplot as plt
-    plot_keys = [k for k in res.keys() if hasattr(res[k], "__iter__") and "p_sims_gt" in res[k]]
+    if isinstance(res, dict):
+        res = [res]
+    print res[0].keys()
+    plot_keys = [k for k in res[0].keys() if hasattr(res[0][k], "__iter__") and "p_sims_gt" in res[0][k]]
 
-    f, axarr = plt.subplots(len(plot_keys))
+    f, axarr = plt.subplots(len(res), len(plot_keys))
     f.set_size_inches((8, 12))
-    for i, metric in enumerate(plot_keys):
-        ax = axarr[i]
-        ax = Shuffler.plot(res[metric], ax=ax)
-        if ax.is_first_col():
-            ax.set_ylabel(metric, fontsize=9, rotation="horizontal")
-        ax.set_xticks([])
+
+    for i, row in enumerate(res):
+        for j, metric in enumerate(plot_keys):
+            ax = axarr[i, j]
+            ax = Shuffler.plot(row[metric], ax=ax)
+            if ax.is_first_col():
+                ax.set_ylabel(row['b'], fontsize=9, rotation="horizontal")
+            ax.set_xticks([])
+            ax.set_yticks([])
+            if ax.is_last_row():
+                ax.set_xlabel(metric, fontsize=9, rotation="horizontal")
 
     f.subplots_adjust(hspace=0.05, wspace=0.05, top=0.95, left=0.16, right=0.98)
     f.savefig(png)
@@ -125,16 +137,49 @@ def merge_excl(excl_list):
         atexit.register(os.unlink, excl)
     return "-excl %s" % excl
 
+def gen_files(fname, col=3):
+    files = {}
+    for toks in reader(fname, header=False):
+        key = toks[col]
+        if not key in files:
+            f = tempfile.mktemp(dir="/tmp")
+            files[key] = open(f, "w")
+        print >>files[key], "\t".join(toks)
+
+    for key, fh in files.iteritems():
+        fh.close()
+        atexit.register(os.unlink, fh.name)
+        yield key, fh.name
 
 
 def shuffle(args):
 
     a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp")) \
             if ":" in args.a else args.a
-    b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp")) \
-            if ":" in args.b else args.b
-
     value_fn = args.metric
+
+    if args.b is None:
+        binfo = parse_file_pad(args.bs)
+        bs = []
+        for f in gen_files(binfo['file']):
+            binfo['file'] = f
+            tmp = tempfile.mktemp(dir="/tmp")
+            bs.append(to_file(stream_file(f, binfo), tmp) \
+                    if abs(binfo['upstream']) + abs(binfo['downstream']) != 0
+                    else f)
+    else:
+
+        bs = [(args.b, tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp")) if ":" in
+                args.b else args.b)]
+
+    # print a  header
+    prefix = "group\t" if args.bs else ""
+    if value_fn == jaccard_values:
+        print prefix + "\t".join(Shuffler.jaccard_metrics)
+    else:
+        print prefix + "\t%s" % value_fn
+
+
     command = "bedtools jaccard -a %(query)s -b %(subject)s"
     if isinstance(value_fn, basestring):
         if value_fn != jaccard_values:
@@ -144,20 +189,23 @@ def shuffle(args):
 
     shuffle_str = merge_excl(args.exclude) if args.exclude else ""
 
-    s = Shuffler(a, b, args.genome, value_fn, n=args.n,
-            shuffle_str=shuffle_str,
-                   seed=args.seed, map=args.threads if args.threads > 1 else map)
+    results = []
+    for bname, b in bs:
+        s = Shuffler(a, b, args.genome, value_fn, n=args.n,
+                shuffle_str=shuffle_str,
+                       seed=args.seed, map=args.threads if args.threads > 1 else map)
 
-    res = s.run(command=command, sims=True)
-    if value_fn == jaccard_values:
-        print "\t".join(Shuffler.jaccard_metrics)
-        print "\t".join(("%.4g" % res[metric]['p_sims_gt']) for metric in \
-                Shuffler.jaccard_metrics)
-    else:
-        print "%s\n%.4g" % (value_fn, res['p_sims_gt'])
-
+        res = s.run(command=command, sims=True)
+        line = ("%s\t" % ( bname)) if args.bs else ""
+        if value_fn == jaccard_values:
+            print line + "\t".join(("%.4g" % res[metric]['p_sims_gt']) for metric in \
+                    Shuffler.jaccard_metrics)
+        else:
+            print line + "%s\n%.4g" % (value_fn, res['p_sims_gt'])
+        res['b'] = bname
+        results.append(res)
     if args.png:
-        plot(res, args.png)
+        plot(results, args.png)
 
 if __name__ == "__main__":
     import doctest
