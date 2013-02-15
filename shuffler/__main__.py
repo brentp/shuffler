@@ -123,7 +123,7 @@ def plot(res, png):
             if ax.is_last_row():
                 ax.set_xlabel(metric, fontsize=9, rotation="horizontal")
 
-    f.subplots_adjust(hspace=0.05, wspace=0.05, top=0.95, left=0.16, right=0.98)
+    f.subplots_adjust(hspace=0.05, wspace=0.025, top=0.97, left=0.15, right=0.98)
     f.savefig(png)
 
 
