@@ -9,12 +9,12 @@ import signal
 def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
 
-def jaccard_values(res, keys="intersection union jaccard n_intersection".split()):
+def jaccard_values(res, keys="intersection union jaccard n_intersections".split()):
     for i, row in enumerate(res):
         row = row.split("\t")
         if row[0].isdigit():
             return dict(zip(keys,
-                int(row[0]), int(row[1]), float(row[2]), int(row[3])))
+                (int(row[0]), int(row[1]), float(row[2]), int(row[3]))))
     raise Exception("not found")
 
 class Shuffler(object):
