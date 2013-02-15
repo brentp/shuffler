@@ -8,14 +8,14 @@ import signal
 
 def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
-JACCARD_METRICS = "intersection union jaccard n_intersections".split()
+JACCARD_METRICS = "intersection jaccard n_intersections".split()
 
 def jaccard_values(res, keys=JACCARD_METRICS):
     for i, row in enumerate(res):
         row = row.split("\t")
         if row[0].isdigit():
             return dict(zip(keys,
-                (int(row[0]), int(row[1]), float(row[2]), int(row[3]))))
+                (int(row[0]), float(row[2]), int(row[3]))))
     raise Exception("not found")
 
 class Shuffler(object):
@@ -94,8 +94,8 @@ class Shuffler(object):
         n, bins, patches = ax.hist(sims['sims'], 20, normed=0,
                 facecolor='green', alpha=0.75, edgecolor='green',
                 rwidth=1.0)
-        red = ax.axvline(x=sims['observed'], color='grey', linewidth=4,
-                alpha=0.5)
+        red = ax.axvline(x=sims['observed'], color='blue', linewidth=2,
+                alpha=0.70)
         if png is not None:
             ax.legend( (red, patches[0]), ('observed', 'simulated'))
             plt.savefig(png)
