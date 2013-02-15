@@ -4,7 +4,7 @@ import sys
 def stream_file(f, pad_info=None):
     if pad_info is None:
         pad_info = parse_file_pad(f)
-
+    f = pad_info.get('file', f)
     if pad_info['upstream'] == pad_info['downstream'] == 0:
         for line in nopen(f):
             yield line.rstrip("\r\n")

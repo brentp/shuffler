@@ -49,11 +49,10 @@ def main():
             "like domain, but the 4th column is used to split into separate "
             "domains a value is returned for each of the sub-domains")
     #
-    g_constraints.add_argument("--exclude", help=
+    g_constraints.add_argument("--exclude", "-excl", action="append", help=
         "(optional) do not allow shuffled intervals to land in the "
         "intervals specified in this file (may be specified "
-        "multiple times)")
-
+        "multiple times)", default=[])
 
     # misc
     p.add_argument("-n", dest="n", help="(optional) number of times to shuffle", type=int,
@@ -64,6 +63,8 @@ def main():
             "number generator", type=int, default=random.seed())
     p.add_argument("--metric", help="metric by which to evaluate overlap",
             default=jaccard_values)
+
+    p.add_argument("--png", help="save a png of the distributions from the sims")
 
     args = p.parse_args()
     if (args.a is None or args.b is None):
@@ -97,10 +98,41 @@ class _wrapper_fn(object):
         return "<user defined function: '%s'>" % \
                 self.command_string.lstrip("|")
 
+def plot(res, png):
+    from matplotlib import pyplot as plt
+    plot_keys = [k for k in res.keys() if hasattr(res[k], "__iter__") and "p_sims_gt" in res[k]]
+
+    f, axarr = plt.subplots(len(plot_keys))
+    f.set_size_inches((8, 12))
+    for i, metric in enumerate(plot_keys):
+        ax = axarr[i]
+        ax = Shuffler.plot(res[metric], ax=ax)
+        if ax.is_first_col():
+            ax.set_ylabel(metric, fontsize=9, rotation="horizontal")
+        ax.set_xticks([])
+
+    f.subplots_adjust(hspace=0.05, wspace=0.05, top=0.95, left=0.16, right=0.98)
+    f.savefig(png)
+
+
+def merge_excl(excl_list):
+    if len(excl_list) == 1:
+        excl = excl_list[0]
+    else:
+        excl = tempfile.mktemp(dir="/tmp")
+        list(nopen("|cat %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
+                % (" ".join(excl_list), excl)))
+        atexit.register(os.unlink, excl)
+    return "-excl %s" % excl
+
+
+
 def shuffle(args):
 
-    a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp"))
-    b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp"))
+    a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp")) \
+            if ":" in args.a else args.a
+    b = tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp")) \
+            if ":" in args.b else args.b
 
     value_fn = args.metric
     command = "bedtools jaccard -a %(query)s -b %(subject)s"
@@ -110,11 +142,11 @@ def shuffle(args):
             command_string = "|" + value_fn.lstrip("|")
             value_fn = _wrapper_fn(command_string)
 
-    shuffle_str = "-excl %s" % args.exclude if args.exclude else ""
+    shuffle_str = merge_excl(args.exclude) if args.exclude else ""
 
     s = Shuffler(a, b, args.genome, value_fn, n=args.n,
-            shuffle_str = shuffle_str,
-                   seed=args.seed, map=args.threads if args.threads > None else map)
+            shuffle_str=shuffle_str,
+                   seed=args.seed, map=args.threads if args.threads > 1 else map)
 
     res = s.run(command=command, sims=True)
     if value_fn == jaccard_values:
@@ -123,6 +155,9 @@ def shuffle(args):
                 Shuffler.jaccard_metrics)
     else:
         print "%s\n%.4g" % (value_fn, res['p_sims_gt'])
+
+    if args.png:
+        plot(res, args.png)
 
 if __name__ == "__main__":
     import doctest
