@@ -22,8 +22,9 @@ shuffling_constraints_doc = """
 import random
 from toolshed import reader, nopen
 from .files import stream_file
-from .shuffler import Shuffler, jaccard_value, jaccard_length \
-        , num_intersections
+from .shuffler import Shuffler, jaccard_values
+import atexit
+import os
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -56,13 +57,13 @@ def main():
 
     # misc
     p.add_argument("-n", dest="n", help="(optional) number of times to shuffle", type=int,
-            default=1000)
+            default=100)
     p.add_argument("-t", dest="threads", help="(optional) number of threads to use",
             type=int, default=1)
     p.add_argument("--seed", help="(optional) seed for random "
             "number generator", type=int, default=random.seed())
     p.add_argument("--metric", help="metric by which to evaluate overlap",
-            default=jaccard_value)
+            default=jaccard_values)
 
     args = p.parse_args()
     if (args.a is None or args.b is None):
@@ -73,22 +74,28 @@ def main():
 def tofile(fiter, fname):
     fh = nopen(fname, "w")
     for line in fiter:
-        print >>fh, line
+        print >>fh, line.rstrip("\r\n")
     fh.close()
+    atexit.register(os.unlink, fname)
     return fname
+
 
 class _wrapper_fn(object):
     def __init__(self, command_string):
         self.command_string = command_string
         self.func_name = command_string
     def __call__(self, fh):
-        out = open(tempfile.mktemp(dir="/tmp/"), "w")
-        print out.name
-        for row in fh:
-            out.write(row)
-        out.close()
-        value = nopen("%s < %s" % (self.command_string, out.name)).next()
-        return int(value)
+        out = tofile(fh, tempfile.mktemp(dir="/tmp/"))
+        try:
+            value = nopen("%s < %s" % (self.command_string, out)).next()
+            return dict(value=float(value))
+        except:
+            print self.command_string
+            raise
+
+    def __str__(self):
+        return "<user defined function: '%s'>" % \
+                self.command_string.lstrip("|")
 
 def shuffle(args):
 
@@ -98,19 +105,24 @@ def shuffle(args):
     value_fn = args.metric
     command = "bedtools jaccard -a %(query)s -b %(subject)s"
     if isinstance(value_fn, basestring):
-        try:
-            if value_fn == "num_intersections":
-                command = "bedtools intersect -a %(query)s -b %(subject)s | wc -l"
-            value_fn = globals()[value_fn]
-        except KeyError:
+        if value_fn != jaccard_values:
+            command = "bedtools intersect -a %(query)s -b %(subject)s -wo"
             command_string = "|" + value_fn.lstrip("|")
             value_fn = _wrapper_fn(command_string)
-            command = "bedtools intersect -a %(query)s -b %(subject)s"
+
+    shuffle_str = "-excl %s" % args.exclude if args.exclude else ""
 
     s = Shuffler(a, b, args.genome, value_fn, n=args.n,
+            shuffle_str = shuffle_str,
                    seed=args.seed, map=args.threads if args.threads > None else map)
-    print s.run(command=command, sims=True)
 
+    res = s.run(command=command, sims=True)
+    if value_fn == jaccard_values:
+        print "\t".join(Shuffler.jaccard_metrics)
+        print "\t".join(("%.4g" % res[metric]['p_sims_gt']) for metric in \
+                Shuffler.jaccard_metrics)
+    else:
+        print "%s\n%.4g" % (value_fn, res['p_sims_gt'])
 
 if __name__ == "__main__":
     import doctest

@@ -8,8 +8,9 @@ import signal
 
 def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
+JACCARD_METRICS = "intersection union jaccard n_intersections".split()
 
-def jaccard_values(res, keys="intersection union jaccard n_intersections".split()):
+def jaccard_values(res, keys=JACCARD_METRICS):
     for i, row in enumerate(res):
         row = row.split("\t")
         if row[0].isdigit():
@@ -24,12 +25,12 @@ class Shuffler(object):
     values after n shufflings of the query compared to the same subject.
     """
     domain = None
+    jaccard_metrics = JACCARD_METRICS
     def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10, shuffle_str="",
             seed=None, map=imap, temp_dir="/tmp/"):
-        # TODO -excl, -incl
         self.suffix = mktemp(dir='')
-
         self.temp_dir = temp_dir
+        self.register_cleanup()
 
         if isinstance(map, (int, long)):
             import multiprocessing
@@ -100,22 +101,23 @@ class Shuffler(object):
             plt.savefig(png)
         return ax
 
-    def __del__(self):
+    def register_cleanup(self):
+        import atexit
+        def cleanup(self):
+            for f in glob.glob("%s/*.sorted.%s" % (self.temp_dir, self.suffix)):
+                os.unlink(f)
+            if getattr(self, "genome_file", "").endswith(self.suffix):
+                os.unlink(self.genome_file)
+            if getattr(self, "domain"):
+                os.unlink(self.domain)
+        atexit.register(cleanup, self)
 
-        if getattr(self, "domain"):
-            os.unlink(self.domain)
-
-        for f in glob.glob("%s/*.sorted.%s" % (self.temp_dir, self.suffix)):
-            os.unlink(f)
-        if getattr(self, "genome_file", "").endswith(self.suffix):
-            os.unlink(self.genome_file)
 
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s", sims=False):
         # jaccard not useful for most things.
         if self.value_fn != jaccard_values and "jaccard" in command:
             command = "bedtools intersect -sorted -a %(query)s -b %(subject)s -wo"
         args = dict(query=self.query, subject=self.subject)
-        #print command % args
         self.obs = self.value_fn(nopen("|%s" % (command % args)))
 
         # call external functions self.map may be Pool.imap
@@ -161,7 +163,6 @@ class Shuffler(object):
 
 
 def _shuffle_and_run_star(args):
-    #print "seed:", args[0],
     #sys.stdout.flush()
     random.seed(args[0])
     return _shuffle_and_run(*args[1:])
@@ -177,108 +178,5 @@ def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, val
     assert isinstance(value, dict)
     return value
 
-# these are examples of value functions. they take an iterator
-# that is the return of the command specified to Shuffler.run()
-# so, e.g. when using | wc -l, num_intersections() simply takes
-# the first value and returns it as an int.
-def jaccard_length(res):
-    for i, row in enumerate(res):
-        row = row.split("\t")
-        if row[0].isdigit():
-            return dict(length=int(row[0]))
-
-def jaccard_value(res):
-    for i, row in enumerate(res):
-        row = row.split("\t")
-        if row[0].isdigit(): return dict(jaccard=float(row[2]))
-
-def num_intersections(res):
-    r = res.next()
-    return dict(n_intersections=int(r))
-
 if __name__ == "__main__":
-
-    SEED = 122212
-    N_SIMS = 1000
-
-    BASE = "/home/brentp/with_Brent/"
-
-    import sys
-    sys.path.insert(0, "%s/LOH_age/src/" % BASE)
-    import lohcna
-
-    imap = 18
-    genome = '/dev/shm/hg18.genome'
-    if not os.path.exists(genome):
-        genome = Shuffler.genome('hg18', genome)
-
-    def shuff_compare(fname, domain=None):
-        shuff_str = "-maxTries 10"
-        early = Shuffler(fname,
-            '%s/LOH_repli/data/features/data_c_constant_early.bed' % BASE,
-            genome,
-            jaccard_length,
-            #shuffle_str=shuff_str,
-            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/")
-        if domain:
-            early.set_domain(domain)
-        early = early.run(sims=True)
-
-        late = Shuffler(fname,
-            '%s/LOH_repli/data/features/data_e_constant_late.bed' % BASE,
-            genome,
-            jaccard_length,
-            #shuffle_str=shuff_str,
-            n=N_SIMS, seed=SEED, map=imap, temp_dir="/dev/shm/")
-        if domain:
-            late.set_domain(domain)
-
-        late = late.run(sims=True)
-
-        return Shuffler.sim_compare(early['observed'] / float(late['observed']), [e
-                        / float(l) for e, l in zip(early['sims'],
-                            late['sims']) if l > 0])['p_sims_gt']
-
-    for oname, ibase in (('OV.txt', '%s/LOH_repli/data/filelist_OV_f2_HAIB__Human1MDuo.txt'),
-                        ('GBM.txt', '%s/LOH_repli/data/filelist_GBM_f2_HAIB__HumanHap550.txt')):
-
-        res = open(oname, 'w')
-        resall = open(oname + ".all", "w")
-        fnames = [x[0] for x in reader(ibase % BASE, header=False)]
-        for i, f in enumerate(fnames):
-            for j, line in enumerate(open('%s/LOH_repli/data/%s' % (BASE, f))):
-                if j == 0 and i > 0: continue
-                resall.write(line)
-        resall.close()
-        fnames.insert(0, resall.name)
-
-        domain = 'domain.bed'
-        domain = None
-        for i, fname in enumerate(fnames):
-            name = mktemp(dir="/dev/shm/")
-            if fname.endswith(".all"):
-                lohcna.to_bed(fname, name, lohcna.loh_fn)
-            else:
-                lohcna.to_bed("%s/LOH_repli/data/%s" % (BASE, fname), name, lohcna.loh_fn)
-            #_run("sort -k1,1 -k2,2n %s | bedtools merge -d 5000 -i - > %s" %
-            #        (name, domain))
-            pair = (fname, shuff_compare(name, domain))
-            print >>sys.stderr, oname, pair
-            print >>res, "%s\t%s" % pair
-            os.unlink(name)
-
-    1/0
-    #print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-    #    '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-    #    jaccard_value, n=100, shuffle_str="-excl ~/with_Brent/LOH_repli/data/features/bedtools.hg18.centromere").run()
-    1/0
-
-
-    print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-        '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        jaccard_length, n=10).run()
-
-    print Shuffler('/tmp/hudsonalpha.org__HumanHap550__TCGA-02-0028-01A-01D-0184-06__snp_analysis.loh.txt.bed',
-        '~/with_Brent/LOH_repli/data/features/data_c_constant_early.bed', 'hg18',
-        num_intersections, n=100).run("bedtools intersect -a %(query)s -b %(subject)s -u | wc -l")
-
+    pass
