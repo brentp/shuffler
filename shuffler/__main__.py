@@ -106,7 +106,6 @@ def plot(res, png):
     from matplotlib import pyplot as plt
     if isinstance(res, dict):
         res = [res]
-    print res[0].keys()
     plot_keys = [k for k in res[0].keys() if hasattr(res[0][k], "__iter__") and "p_sims_gt" in res[0][k]]
 
     f, axarr = plt.subplots(len(res), len(plot_keys))
@@ -137,7 +136,7 @@ def merge_excl(excl_list):
         atexit.register(os.unlink, excl)
     return "-excl %s" % excl
 
-def gen_files(fname, col=3):
+def gen_files(fname, col=-1):
     files = {}
     for toks in reader(fname, header=False):
         key = toks[col]
@@ -146,7 +145,7 @@ def gen_files(fname, col=3):
             files[key] = open(f, "w")
         print >>files[key], "\t".join(toks)
 
-    for key, fh in files.iteritems():
+    for key, fh in sorted(files.iteritems()):
         fh.close()
         atexit.register(os.unlink, fh.name)
         yield key, fh.name
