@@ -10,7 +10,8 @@ def stream_file(f, pad_info=None):
             yield line.rstrip("\r\n")
         raise StopIteration
 
-    for toks in reader(f, header=None):
+    for i, toks in enumerate(reader(f, header=None)):
+        if i == 0 and not (toks[1] + toks[2]).isdigit(): continue
         toks[1] = int(toks[1])
         toks[2] = int(toks[2])
 
