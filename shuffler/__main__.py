@@ -126,15 +126,37 @@ def plot(res, png):
     f.savefig(png)
 
 
-def merge_excl(excl_list):
+def merge_excl(excl_list, genome):
+    if not os.path.exists(genome):
+        fgen = tempfile.mktemp(dir="/tmp")
+        genome = Shuffler.genome(genome, fgen)
+        atexit.register(os.unlink, genome)
+
     if len(excl_list) == 1:
         excl = excl_list[0]
     else:
         excl = tempfile.mktemp(dir="/tmp")
-        list(nopen("|cat %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
+        list(nopen("|cut -f 1-3 %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
                 % (" ".join(excl_list), excl)))
         atexit.register(os.unlink, excl)
-    return "-excl %s" % excl
+
+    bases = []
+    for i, f in enumerate((genome, excl)):
+        n_bases = 0
+        for toks in reader(f, header=False):
+            try:
+                if i == 0:
+                    n_bases += int(toks[1])
+                else:
+                    n_bases += (int(toks[2]) - int(toks[1]))
+            except ValueError:
+                pass
+        bases.append(n_bases)
+
+    print >>sys.stderr, "# excluding %5g out of %5g total bases (%.3g%%) in the genome" % \
+            (bases[1] , bases[0], 100. * bases[1] / float(bases[0]))
+
+    return excl
 
 def gen_files(fname, col=-1):
     files = {}
@@ -150,6 +172,11 @@ def gen_files(fname, col=-1):
         atexit.register(os.unlink, fh.name)
         yield key, fh.name
 
+def count_length(bed):
+    l = 0
+    for toks in bed:
+        l += int(toks[2]) - int(toks[1])
+    return l
 
 def shuffle(args):
 
@@ -178,7 +205,6 @@ def shuffle(args):
     else:
         print prefix + "\t%s" % value_fn
 
-
     command = "bedtools jaccard -a %(query)s -b %(subject)s"
     if isinstance(value_fn, basestring):
         if value_fn != jaccard_values:
@@ -186,10 +212,20 @@ def shuffle(args):
             command_string = "|" + value_fn.lstrip("|")
             value_fn = _wrapper_fn(command_string)
 
-    shuffle_str = merge_excl(args.exclude) if args.exclude else ""
+    excl = merge_excl(args.exclude, args.genome) if args.exclude else ""
+    shuffle_str = ("-excl %s" % excl) if args.exclude else ""
+    if excl:
+        n_orig = count_length(reader("|bedtools merge -i <(sort -k1,1 -k2,2n %s)" \
+                    % a, header=False))
+        n_after = count_length(reader("|bedtools subtract -a %s -b %s" \
+                % (a, excl), header=False))
+        if n_orig - n_after > 0:
+            print >>sys.stderr, "#removing %i of %i (%.3g%%) from %s" % \
+                (n_orig - n_after, n_orig, 100. * (n_orig - n_after) / n_orig, args.a)
 
     results = []
     for bname, b in bs:
+
         s = Shuffler(a, b, args.genome, value_fn, n=args.n,
                 shuffle_str=shuffle_str,
                        seed=args.seed, map=args.threads if args.threads > 1 else map)
