@@ -43,8 +43,11 @@ class Shuffler(object):
         self.query = mktemp(suffix=".sorted.%s" % self.suffix, dir=self.temp_dir)
         self.value_fn = value_fn
         self.subject = mktemp(suffix=".sorted.%s" % self.suffix, dir=self.temp_dir)
-        _run("sort -k1,1 -k2,2n %s > %s" % (query, self.query))
-        _run("sort -k1,1 -k2,2n %s > %s" % (subject, self.subject))
+
+        cut = "| cut -f 1-3 " if value_fn == jaccard_values else ""
+        _run("sort -k1,1 -k2,2n %s %s > %s" % (query, cut, self.query))
+        _run("sort -k1,1 -k2,2n %s %s > %s" % (subject, cut, self.subject))
+
         self.n = n
         if not os.path.exists(genome):
             self.genome_file = mktemp(suffix="." + genome + ".%s" % self.suffix,
