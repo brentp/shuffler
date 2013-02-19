@@ -3,6 +3,7 @@ from tempfile import mktemp
 from itertools import imap
 import random
 import os, glob
+os.environ['LC_ALL'] = 'C'
 import sys
 import signal
 
@@ -169,10 +170,10 @@ def _shuffle_and_run_star(args):
 
 def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command, value_fn):
     bed_seed = random.randint(0, sys.maxint)
-    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s | sort -k1,1 -k2,2n ' \
+    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s' \
             % (bed_seed, shuffle_str, query, genome)
     full_command = "%s |  %s" % (shuffle_cmd, command)
-    args_dict = dict(query="-", subject=subject)
+    args_dict = dict(query="<(sort -k1,1 -k2,2n -)", subject=subject)
     res_iter = nopen("|%s" % full_command % args_dict)
     value = value_fn(res_iter)
     assert isinstance(value, dict)
