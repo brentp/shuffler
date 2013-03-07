@@ -1,5 +1,6 @@
 from toolshed import reader, nopen
-from tempfile import mktemp
+import atexit
+import tempfile
 from itertools import imap
 import random
 import os, glob
@@ -10,6 +11,20 @@ import signal
 def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
 JACCARD_METRICS = "intersection jaccard n_intersections".split()
+
+def rm(fname):
+    try:
+        os.unlink(fname)
+    except OSError:
+        pass
+
+def mktemp(*args, **kwargs):
+    f = tempfile.NamedTemporaryFile(*args, **kwargs)
+    atexit.register(rm, f.name)
+    try:
+        return f.name
+    finally:
+        f.close()
 
 def jaccard_values(res, keys=JACCARD_METRICS):
     for i, row in enumerate(res):
@@ -29,9 +44,8 @@ class Shuffler(object):
     jaccard_metrics = JACCARD_METRICS
     def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10, shuffle_str="",
             seed=None, map=imap, temp_dir="/tmp/"):
-        self.suffix = mktemp(dir='')
+        self.suffix = ".shuffler"
         self.temp_dir = temp_dir
-        self.register_cleanup()
 
         if isinstance(map, (int, long)):
             import multiprocessing
@@ -73,7 +87,6 @@ class Shuffler(object):
             _run("bedtools intersect -a %s -b %s -u | sort -k1,1 -k2,2n > %s" %
                                 (old_file, self.domain, new_file))
             setattr(self, attr, new_file)
-            os.unlink(old_file)
         self.shuffle_str = "-incl %s" % self.domain
 
     @classmethod
@@ -104,18 +117,6 @@ class Shuffler(object):
             ax.legend( (red, patches[0]), ('observed', 'simulated'))
             plt.savefig(png)
         return ax
-
-    def register_cleanup(self):
-        import atexit
-        def cleanup(self):
-            for f in glob.glob("%s/*.sorted.%s" % (self.temp_dir, self.suffix)):
-                os.unlink(f)
-            if getattr(self, "genome_file", "").endswith(self.suffix):
-                os.unlink(self.genome_file)
-            if getattr(self, "domain"):
-                os.unlink(self.domain)
-        atexit.register(cleanup, self)
-
 
     def run(self, command="bedtools jaccard -a %(query)s -b %(subject)s", sims=False):
         # jaccard not useful for most things.
