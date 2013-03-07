@@ -3,7 +3,7 @@ import atexit
 import tempfile
 from itertools import imap
 import random
-import os, glob
+import os
 os.environ['LC_ALL'] = 'C'
 import sys
 import signal
@@ -43,7 +43,7 @@ class Shuffler(object):
     domain = None
     jaccard_metrics = JACCARD_METRICS
     def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10, shuffle_str="",
-            seed=None, map=imap, temp_dir="/tmp/"):
+            seed=None, map=imap, temp_dir=os.environ.get("TMPDIR", "/tmp/")):
         self.suffix = ".shuffler"
         self.temp_dir = temp_dir
 
