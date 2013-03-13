@@ -30,8 +30,12 @@ def jaccard_values(res, keys=JACCARD_METRICS):
     for i, row in enumerate(res):
         row = row.split("\t")
         if row[0].isdigit():
-            return dict(zip(keys,
-                (int(row[0]), float(row[2]), int(row[3]))))
+            if len(row) > 3:
+                return dict(zip(keys,
+                    (int(row[0]), float(row[2]), int(row[3]))))
+            else:
+                return dict(zip(keys,
+                    (int(row[0]), float(row[2]))))
     raise Exception("not found")
 
 class Shuffler(object):

@@ -186,7 +186,7 @@ the green shows the distribution of simulations. Remember we got all this from a
         --exclude data/charm.domain.complement.bed
 
 which ran 250 shufflings for each category from the 2.8 million chromHMM 
-segementations on the 2.8 million intervals from chromHMM in about 5 minutes.
+segementations in about 5 minutes.
 
 todo
 ----
