@@ -6,7 +6,9 @@ e.g. total bases of overlap between the 2 sets, or number of overlaps.
 """
 import argparse
 import sys
+import os
 import tempfile
+tempfile.tempdir = os.environ.get('TMPDIR', '/tmp')
 
 shuffling_constraints_doc = """
     each of these specify some constraint on where to send the randomized
@@ -25,6 +27,7 @@ from .files import stream_file, parse_file_pad
 from .shuffler import Shuffler, jaccard_values
 import atexit
 import os
+
 
 def main():
     p = argparse.ArgumentParser(description=__doc__,
@@ -90,7 +93,7 @@ class _wrapper_fn(object):
         self.command_string = command_string
         self.func_name = command_string
     def __call__(self, fh):
-        out = tofile(fh, tempfile.mktemp(dir="/tmp/"))
+        out = tofile(fh, tempfile.mktemp())
         try:
             value = nopen("%s < %s" % (self.command_string, out)).next()
             return dict(value=float(value))
@@ -128,14 +131,14 @@ def plot(res, png):
 
 def merge_excl(excl_list, genome):
     if not os.path.exists(genome):
-        fgen = tempfile.mktemp(dir="/tmp")
+        fgen = tempfile.mktemp()
         genome = Shuffler.genome(genome, fgen)
         atexit.register(os.unlink, genome)
 
     if len(excl_list) == 1:
         excl = excl_list[0]
     else:
-        excl = tempfile.mktemp(dir="/tmp")
+        excl = tempfile.mktemp()
         list(nopen("|cut -f 1-3 %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
                 % (" ".join(excl_list), excl)))
         atexit.register(os.unlink, excl)
@@ -163,7 +166,7 @@ def gen_files(fname, col=-1):
     for toks in reader(fname, header=False):
         key = toks[col]
         if not key in files:
-            f = tempfile.mktemp(dir="/tmp")
+            f = tempfile.mktemp()
             files[key] = open(f, "w")
         print >>files[key], "\t".join(toks)
 
@@ -180,7 +183,7 @@ def count_length(bed):
 
 def shuffle(args):
 
-    a = tofile(stream_file(args.a), tempfile.mktemp(dir="/tmp")) \
+    a = tofile(stream_file(args.a), tempfile.mktemp()) \
             if ":" in args.a else args.a
     value_fn = args.metric
 
@@ -189,13 +192,13 @@ def shuffle(args):
         bs = []
         for f in gen_files(binfo['file']):
             binfo['file'] = f
-            tmp = tempfile.mktemp(dir="/tmp")
-            bs.append(to_file(stream_file(f, binfo), tmp) \
+            tmp = tempfile.mktemp()
+            bs.append(tofile(stream_file(f, binfo), tmp) \
                     if abs(binfo['upstream']) + abs(binfo['downstream']) != 0
                     else f)
     else:
 
-        bs = [(args.b, tofile(stream_file(args.b), tempfile.mktemp(dir="/tmp")) if ":" in
+        bs = [(args.b, tofile(stream_file(args.b), tempfile.mktemp()) if ":" in
                 args.b else args.b)]
 
     # print a  header
