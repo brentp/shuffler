@@ -74,7 +74,8 @@ def main():
     p.add_argument("--png", help="save a png of the distributions from the sims")
 
     args = p.parse_args()
-    if (args.a is None or (args.b is None and args.bs == [])):
+    if (args.a is None or (args.b is None and args.bs == []) or args.genome is
+            None):
         sys.exit(not p.print_help())
 
     shuffle(args)
