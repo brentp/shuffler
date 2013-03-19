@@ -1,9 +1,11 @@
 # see: http://metatracks.encodenets.gersteinlab.org/
 # cite: PMID 22950945
-if [ ! -e ALL_ALL_merged.tar.gz ]; then
+mkdir -p tmp/
+cd tmp/
+if [ ! -e ALL_All_merged.tar.gz ]; then
     wget http://metatracks.encodenets.gersteinlab.org/ALL_All_merged.tar.gz
-    tar xzvf ALL_All_merged.tar.gz
 fi
+tar xzvf ALL_All_merged.tar.gz
 
 cells="Gm12878 H1hesc Helas3 Hepg2 K562"
 regions="HOT HOT_distal LOT LOT_distal BAR BIR DRM PRM"
@@ -26,4 +28,5 @@ done
 
 sort -k1,1 -k2,2n $OUT > $OUT.tmp
 mv $OUT.tmp $OUT
+mv $OUT ../
 
