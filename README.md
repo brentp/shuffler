@@ -3,6 +3,8 @@ intervals to the distribution of that relationship derived from a number of
 shufflings. This "relationship" can be anything that returns a single number,
 e.g. total bases of overlap between the 2 sets, or number of overlaps.
 
+see example section for usage
+
 parameters: 
 
     ------
