@@ -6,9 +6,15 @@ had the same segmentation
 from toolshed import nopen, reader
 import os
 import os.path as op
+from operator import itemgetter
+from itertools import groupby
 import sys
 
-hg = sys.argv[1]
+try:
+    hg = sys.argv[1]
+except:
+    print >>sys.stderr, "send in hg18 or hg19 as first argument"
+    sys.exit(1)
 URL="http://hgdownload.cse.ucsc.edu/goldenPath/%s/encodeDCC/wgEncodeBroadHmm/" % hg
 
 def run(cmd):
@@ -29,9 +35,9 @@ segs=set(t[3].replace(" ", "_") for t in reader('wgEncodeBroadHmmHmecHMM.%s.bed.
 print segs
 
 
-base_cmd="bedtools multiinter -header -names %s -i" % " ".join(celltypes)
+base_cmd="bedtools multiinter -names %s -i" % " ".join(celltypes)
 
-OUT="chromHMM.merged.%s.bed" % hg
+OUT="chromHMM.%s.bed" % hg
 run("rm -f %s" % OUT)
 
 seen = {}
@@ -52,4 +58,13 @@ for seg in segs:
 
 
 run("sort -k1,1 -k2,2n %s | gzip -c > ../%s.gz; rm %s" % (OUT, OUT, OUT))
+os.chdir("..")
 print OUT + ".gz"
+# now merge if the last files are the same and the intervals are abutting
+OUTM=open("chromHMM.%s.merged.bed.gz" % hg, 'w')
+
+for toks in reader("|bedtools groupby -i %s.gz -g 1,5 -c 2,3 -o min,max" % OUT,
+           header=False):
+    print >>OUTM, "\t".join((toks[0], toks[2], toks[3], toks[1]))
+OUTM.close()
+print OUTM.name
