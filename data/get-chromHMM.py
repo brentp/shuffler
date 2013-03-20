@@ -27,7 +27,7 @@ print segs
 
 base_cmd="bedtools multiinter -header -names %s -i" % " ".join(celltypes)
 
-OUT="chromHMM.merged.bed"
+OUT="chromHMM.merged.hg19.bed"
 run("rm -f %s" % OUT)
 
 seen = {}
