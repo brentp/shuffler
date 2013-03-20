@@ -37,7 +37,6 @@ for c in celltypes:
         run("bigBedToBed %s stdout | cut -f 1-4 | gzip -c > %s" % (fn, fb))
     print(fb)
     fns.append(fb)
-1/0
 
 segs=set(t[3].replace(" ", "_") for t in reader(fns[0], header=False))
 
@@ -53,7 +52,7 @@ seen = {}
 for seg in segs:
     cmd = base_cmd
     # convert 1_Txn_Elongation to Txn_Elongation
-    seg_nice = seg.split("_", 1)[1]
+    seg_nice = seg.split("_", 1)[-1]
     if seg_nice in seen: continue
     seen[seg_nice] = True
     for c in celltypes:
