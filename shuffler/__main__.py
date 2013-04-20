@@ -164,16 +164,23 @@ def merge_excl(excl_list, genome):
 
 def gen_files(fname, col=-1):
     files = {}
-    for toks in reader(fname, header=False):
+    for i, toks in enumerate(reader(fname, header=False)):
+        if i == 0 and not (toks[1] + toks[2]).isdigit(): continue
+        if not (toks[1] + toks[2]).isdigit():
+            print >>sys.stderr, "bad bed record at %s line: %i, skipping" \
+                    %  (fname, i)
+            continue
+
         key = toks[col]
         if not key in files:
             f = tempfile.mktemp()
             files[key] = open(f, "w")
+        assert len(toks) > 2
         print >>files[key], "\t".join(toks)
 
     for key, fh in sorted(files.iteritems()):
         fh.close()
-        atexit.register(os.unlink, fh.name)
+        #atexit.register(os.unlink, fh.name)
         yield key, fh.name
 
 def count_length(bed):
@@ -191,17 +198,14 @@ def shuffle(args):
     if args.b is None:
         binfo = parse_file_pad(args.bs)
         bs = []
-        for f in gen_files(binfo['file']):
+        for key, f in gen_files(binfo['file']):
             binfo['file'] = f
             tmp = tempfile.mktemp()
-            bs.append(tofile(stream_file(f, binfo), tmp) \
-                    if abs(binfo['upstream']) + abs(binfo['downstream']) != 0
-                    else f)
+            bs.append((key, tofile(stream_file(f, binfo), tmp)))
     else:
 
         bs = [(args.b, tofile(stream_file(args.b), tempfile.mktemp()) if ":" in
                 args.b else args.b)]
-
     # print a  header
     prefix = "group\t" if args.bs else ""
     if value_fn == jaccard_values:
@@ -234,7 +238,7 @@ def shuffle(args):
                 shuffle_str=shuffle_str,
                        seed=args.seed, map=args.threads if args.threads > 1 else map)
 
-        res = s.run(command=command, sims=True)
+        res = s.run(cmd=command, sims=True)
         line = ("%s\t" % ( bname)) if args.bs else ""
         if value_fn == jaccard_values:
             print line + "\t".join(("%.4g" % res[metric]['p_sims_gt']) for metric in \

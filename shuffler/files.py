@@ -1,13 +1,19 @@
 from toolshed import reader, nopen
+import os.path as op
 import sys
 
 def stream_file(f, pad_info=None):
     if pad_info is None:
         pad_info = parse_file_pad(f)
     f = pad_info.get('file', f)
+    assert op.exists(f)
     if pad_info['upstream'] == pad_info['downstream'] == 0:
-        for line in nopen(f):
-            yield line.rstrip("\r\n")
+        for i, fline in enumerate(nopen(f)):
+            if i == 0:
+                toks = fline.rstrip("\r\n").split("\t")
+                if not (toks[1] + toks[2]).isdigit():
+                    continue
+            yield fline.rstrip("\r\n")
         raise StopIteration
 
     for i, toks in enumerate(reader(f, header=None)):
@@ -85,7 +91,6 @@ if __name__ == "__main__":
     doctest.testmod()
 
     info = parse_file_pad(sys.argv[1])
-    print info["file"], info
 
     for s in stream_file(info['file'], info):
         print s
