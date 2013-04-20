@@ -233,7 +233,6 @@ def shuffle(args):
 
     results = []
     for bname, b in bs:
-
         s = Shuffler(a, b, args.genome, value_fn, n=args.n,
                 shuffle_str=shuffle_str,
                        seed=args.seed, map=args.threads if args.threads > 1 else map)
