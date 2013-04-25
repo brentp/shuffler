@@ -77,8 +77,8 @@ class Shuffler(object):
         in order to do this, we also have to create a fake genome file that
         contains the lengths of those chromosomes.
         """
-        print >>sys.stderr "NEED TO CHANGE NAME OF ANY EXCL FILE TOO!!"
-        if structure is None: return
+        if structure in (None, ""): return
+        print >>sys.stderr, "NEED TO CHANGE NAME OF ANY EXCL FILE TOO!!"
         self.shuffle_str += " -chrom"
 
         n_query_before = sum(1 for _ in nopen(self.query))

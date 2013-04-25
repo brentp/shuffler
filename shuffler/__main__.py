@@ -67,7 +67,7 @@ def main():
             " intervals within that region (not across entire genome or chrom)."
             " For a properly defined set of constraint intervals, this can "
             " give something like the GSC (genome-structure correction) from "
-            " the ENCODE papers (Bickel)")
+            " the ENCODE papers (Bickel)", default=None)
 
 
     # misc
