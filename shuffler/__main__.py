@@ -61,6 +61,15 @@ def main():
         "intervals specified in this file (may be specified "
         "multiple times)", default=[])
 
+    g_constraints.add_argument("--structure", metavar="BED",
+            help="shuffle within these"
+            " regions. e.g. for each region in structure. shuffled the -a"
+            " intervals within that region (not across entire genome or chrom)."
+            " For a properly defined set of constraint intervals, this can "
+            " give something like the GSC (genome-structure correction) from "
+            " the ENCODE papers (Bickel)")
+
+
     # misc
     p.add_argument("-n", dest="n", help="(optional) number of times to shuffle", type=int,
             default=100)
@@ -222,6 +231,7 @@ def shuffle(args):
 
     excl = merge_excl(args.exclude, args.genome) if args.exclude else ""
     shuffle_str = ("-excl %s" % excl) if args.exclude else ""
+    shuffle_str += " -chrom"
     if excl:
         n_orig = count_length(reader("|bedtools merge -i <(sort -k1,1 -k2,2n %s)" \
                     % a, header=False))
@@ -235,7 +245,8 @@ def shuffle(args):
     for bname, b in bs:
         s = Shuffler(a, b, args.genome, value_fn, n=args.n,
                 shuffle_str=shuffle_str,
-                       seed=args.seed, map=args.threads if args.threads > 1 else map)
+                structure=args.structure,
+                seed=args.seed, map=args.threads if args.threads > 1 else map)
 
         res = s.run(cmd=command, sims=True)
         line = ("%s\t" % ( bname)) if args.bs else ""

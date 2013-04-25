@@ -48,7 +48,8 @@ class Shuffler(object):
     jaccard_metrics = JACCARD_METRICS
     def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10,
             shuffle_str="", seed=None, map=imap,
-            temp_dir=os.environ.get("TMPDIR", "/tmp/")):
+            temp_dir=os.environ.get("TMPDIR", "/tmp/"),
+            structure=None):
         self.suffix = "shuffler"
         self.temp_dir = temp_dir
 
@@ -65,6 +66,68 @@ class Shuffler(object):
         self.n = n
 
         self._prepare(query, subject, genome)
+        self._set_structure(structure)
+
+    def _set_structure(self, structure):
+        """
+        here, we want to intersect the query and subject bed files with the
+        structure.bed file and give each set of intervals in query and bed
+        that fall within (or have any overlap with) a unique, fake chromosome
+        so that all shuffling is within that chromosome.
+        in order to do this, we also have to create a fake genome file that
+        contains the lengths of those chromosomes.
+        """
+        print >>sys.stderr "NEED TO CHANGE NAME OF ANY EXCL FILE TOO!!"
+        if structure is None: return
+        self.shuffle_str += " -chrom"
+
+        n_query_before = sum(1 for _ in nopen(self.query))
+        n_subject_before = sum(1 for _ in nopen(self.subject))
+
+        new_genome = open(mktemp(suffix='.fake_genome'), 'w')
+        structure = "<(cut -f 1-3 %s)" % structure
+        seen_segs = {}
+        for bed in ('query', 'subject'):
+            bed_path = getattr(self, bed)
+            new_fh = open(mktemp(suffix='%s.fake' % bed), 'w')
+            for toks in reader("|bedtools intersect -wo -a %s -b '%s' \
+                    | sort -k4,4 -k5,5g" % (structure, bed_path), header=False):
+                gtoks, btoks = toks[:3], toks[3:-1] # drop the bp overlap
+                new_chrom = "_".join(gtoks)
+
+                gtoks[1:] = map(int, gtoks[1:])
+                btoks[1:3] = map(int, btoks[1:3])
+
+                glen = gtoks[2] - gtoks[1] # fake chrom length.
+                if new_chrom.startswith('chr'): new_chrom = new_chrom[3:]
+                if not new_chrom in seen_segs:
+                    # save it in the genome file.
+                    print >>new_genome, "\t".join((new_chrom, str(glen)))
+                seen_segs[new_chrom] = True
+
+                # with partial overlap, we'll have a negative start or an
+                # end outside the genome... for now, just truncate.
+
+                # adjust the interval to its location the new chrom.
+                btoks[0] = new_chrom
+                btoks[1] = max(0, btoks[1] - gtoks[1]) # don't let it go below 0
+                # chop to end of fake chrom.
+                btoks[2] = min(btoks[2] - gtoks[1], glen - 1)
+                assert 0 <= btoks[1] <= btoks[2] < glen
+                btoks[1:3] = map(str, btoks[1:3])
+                print >>new_fh, "\t".join(btoks)
+            new_fh.close()
+            setattr(self, bed, new_fh.name)
+        new_genome.close()
+        self.genome_file = new_genome.name
+        n_query_after = sum(1 for _ in nopen(self.query))
+        n_subject_after = sum(1 for _ in nopen(self.subject))
+        print >>sys.stderr, """applied structure:
+            interval before and after:
+            query %i %i
+            subject %i %i"""\
+                    % (n_query_before, n_query_after,
+                            n_subject_before, n_subject_after)
 
     def _prepare(self, query, subject, genome):
         self.query = mktemp(suffix=".sorted.%s" % self.suffix,
@@ -73,10 +136,8 @@ class Shuffler(object):
                 dir=self.temp_dir)
 
         cut = "| cut -f 1-3 " if self.value_fn == jaccard_values else ""
-        _run("awk 'NR > 1 || $1 != \"chrom\"' %s | sort -k1,1 -k2,2n %s > %s" \
-                % (query, cut, self.query))
-        _run("awk 'NR > 1 || $1 != \"chrom\"' %s | sort -k1,1 -k2,2n %s > %s" \
-                % (subject, cut, self.subject))
+        _run("sort -k1,1 -k2,2n %s %s > %s" % (query, cut, self.query))
+        _run("sort -k1,1 -k2,2n %s %s > %s" % (subject, cut, self.subject))
 
         if not os.path.exists(genome):
             self.genome_file = mktemp(suffix="." + genome + ".%s" % self.suffix,
