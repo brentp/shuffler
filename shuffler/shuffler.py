@@ -12,6 +12,13 @@ def _run(cmd):
     list(nopen("|%s" % cmd.lstrip("|")))
 JACCARD_METRICS = "intersection jaccard n_intersections".split()
 
+def count_length(bed):
+    l = 0
+    for toks in bed:
+        l += int(toks[2]) - int(toks[1])
+    return l
+
+
 def rm(fname):
     try:
         os.unlink(fname)
@@ -38,6 +45,36 @@ def jaccard_values(res, keys=JACCARD_METRICS):
                     (int(row[0]), float(row[2]))))
     raise Exception("not found")
 
+def merge_beds(excl_list, genome, prefix="ex"):
+    if not os.path.exists(genome):
+        fgen = mktemp()
+        genome = Shuffler.genome(genome, fgen)
+
+    if len(excl_list) == 1:
+        excl = excl_list[0]
+    else:
+        excl = mktemp()
+        _run("|cut -f 1-3 %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
+                % (" ".join(excl_list), excl))
+
+    bases = []
+    for i, f in enumerate((genome, excl)):
+        n_bases = 0
+        for toks in reader(f, header=False):
+            try:
+                if i == 0:
+                    n_bases += int(toks[1])
+                else:
+                    n_bases += (int(toks[2]) - int(toks[1]))
+            except ValueError:
+                pass
+        bases.append(n_bases)
+
+    #print >>sys.stderr, "# %scluding %5g out of %5g total bases (%.3g%%) in the genome" % \
+    #        (prefix, bases[1] , bases[0], 100. * bases[1] / float(bases[0]))
+    return excl
+
+
 class Shuffler(object):
     """
     given a query and a subject
@@ -45,9 +82,14 @@ class Shuffler(object):
     values after n shufflings of the query compared to the same subject.
     """
     domain = None
+    _exclude = _include = None
     jaccard_metrics = JACCARD_METRICS
-    def __init__(self, query, subject, genome, value_fn=jaccard_values, n=10,
-            shuffle_str="", seed=None, map=imap,
+    def __init__(self, query, subject, genome,
+            value_fn=jaccard_values,
+            excludes=None, includes=None,
+            n=10,
+            seed=None, map=imap,
+            chrom=False,
             temp_dir=os.environ.get("TMPDIR", "/tmp/"),
             structure=None):
         self.suffix = "shuffler"
@@ -60,12 +102,13 @@ class Shuffler(object):
             self.map = p.imap
         else:
             self.map = map
+
+        self.chrom = chrom
         self.value_fn = value_fn
-        self.shuffle_str = shuffle_str
         self.seed = random.randint(0, sys.maxint) if seed is None else seed
         self.n = n
 
-        self._prepare(query, subject, genome)
+        self._prepare(query, subject, excludes, includes, genome)
         self._set_structure(structure)
 
     def _set_structure(self, structure):
@@ -78,8 +121,7 @@ class Shuffler(object):
         contains the lengths of those chromosomes.
         """
         if structure in (None, ""): return
-        print >>sys.stderr, "NEED TO CHANGE NAME OF ANY EXCL FILE TOO!!"
-        self.shuffle_str += " -chrom"
+        self.chrom = True # has to be by chromosome.
 
         n_query_before = sum(1 for _ in nopen(self.query))
         n_subject_before = sum(1 for _ in nopen(self.subject))
@@ -87,8 +129,9 @@ class Shuffler(object):
         new_genome = open(mktemp(suffix='.fake_genome'), 'w')
         structure = "<(cut -f 1-3 %s)" % structure
         seen_segs = {}
-        for bed in ('query', 'subject'):
-            bed_path = getattr(self, bed)
+        for bed in ('query', 'subject', 'exclude', 'include'):
+            bed_path = getattr(self, "_" + bed, getattr(self, bed))
+            if not bed_path: continue
             new_fh = open(mktemp(suffix='%s.fake' % bed), 'w')
             for toks in reader("|bedtools intersect -wo -a %s -b '%s' \
                     | sort -k4,4 -k5,5g" % (structure, bed_path), header=False):
@@ -120,16 +163,24 @@ class Shuffler(object):
             setattr(self, bed, new_fh.name)
         new_genome.close()
         self.genome_file = new_genome.name
-        n_query_after = sum(1 for _ in nopen(self.query))
-        n_subject_after = sum(1 for _ in nopen(self.subject))
-        print >>sys.stderr, """applied structure:
-            interval before and after:
-            query %i %i
-            subject %i %i"""\
-                    % (n_query_before, n_query_after,
-                            n_subject_before, n_subject_after)
+        #n_query_after = sum(1 for _ in nopen(self.query))
+        #n_subject_after = sum(1 for _ in nopen(self.subject))
+        #print >>sys.stderr, """applied structure:
+        #    interval before and after:
+        #    query %i %i
+        #    subject %i %i"""\
+        #            % (n_query_before, n_query_after,
+        #                    n_subject_before, n_subject_after)
 
-    def _prepare(self, query, subject, genome):
+    def _prepare(self, query, subject, excludes, includes, genome):
+        if not os.path.exists(genome):
+            self.genome_file = mktemp(suffix="." + genome + ".%s" % self.suffix,
+                    dir=self.temp_dir)
+            Shuffler.genome(genome, self.genome_file)
+        else:
+            self.genome_file = genome
+
+
         self.query = mktemp(suffix=".sorted.%s" % self.suffix,
                 dir=self.temp_dir)
         self.subject = mktemp(suffix=".sorted.%s" % self.suffix,
@@ -139,12 +190,58 @@ class Shuffler(object):
         _run("sort -k1,1 -k2,2n %s %s > %s" % (query, cut, self.query))
         _run("sort -k1,1 -k2,2n %s %s > %s" % (subject, cut, self.subject))
 
-        if not os.path.exists(genome):
-            self.genome_file = mktemp(suffix="." + genome + ".%s" % self.suffix,
-                    dir=self.temp_dir)
-            Shuffler.genome(genome, self.genome_file)
+        self.exclude = excludes
+        self.include = includes
+
+    def _set_exclude(self, excludes):
+        # TODO: need to remove the q, s feats that overlap with exclue.
+        if excludes:
+            if isinstance(excludes, basestring): excludes = [excludes]
+            #print >>sys.stderr, "merging excludes: ", excludes
+            self._exclude = merge_beds(excludes, self.genome_file)
+
+            for qs in ('query', 'subject'):
+                bed = getattr(self, qs)
+                n_orig = count_length(reader("|bedtools merge -i <(sort -k1,1 -k2,2n %s)" \
+                         % bed, header=False))
+                ex_bed = mktemp(suffix=qs)
+                _run("|bedtools subtract -a %s -b %s | sort -k1,1 -k2,2n > %s" \
+                                % (bed, self._exclude, ex_bed))
+
+                n_after = count_length(reader(ex_bed, header=False))
+                setattr(self, qs, ex_bed)
+
+                if n_orig - n_after > 0:
+                    print >>sys.stderr, "#removing %i of %i (%.3g%%) from %s" % \
+                     (n_orig - n_after, n_orig,
+                             100. * (n_orig - n_after) / n_orig, qs)
         else:
-            self.genome_file = genome
+            self._exclude = ""
+
+    def _get_exclude(self):
+        return ("-excl %s" % self._exclude) if self._exclude else ""
+
+    exclude = property(_get_exclude, _set_exclude)
+
+    def _set_include(self, includes):
+        if includes:
+            if isinstance(includes, basestring): includes = [includes]
+            self._include = merge_beds(includes, self.genome_file, prefix="in")
+            self.set_domain(self._include, pad=0)
+        else:
+            self._include = ""
+
+    def _get_include(self):
+        return ("-incl %s" % self._include) if self._include else ""
+
+    include = property(_get_include, _set_include)
+
+    @property
+    def shuffle_str(self):
+        s = " ".join((self.exclude,
+                      self.include,
+                      "-chrom" if self.chrom else ""))
+        return " ".join(s.split()) # remove empties
 
     def set_domain(self, domain_file, pad=5000):
         """
@@ -163,10 +260,11 @@ class Shuffler(object):
             _run("bedtools intersect -a %s -b %s -u | sort -k1,1 -k2,2n > %s" %
                                 (old_file, self.domain, new_file))
             setattr(self, attr, new_file)
-        self.shuffle_str = "-incl %s" % self.domain
 
     @classmethod
-    def genome(cls, genome, outf):
+    def genome(cls, genome, outf=None):
+        if os.path.exists(genome): return genome
+        if outf is None: outf = mktemp()
         _run('mysql --user=genome --host=genome-mysql.cse.ucsc.edu -A -e \
                 "select chrom, size from %s.chromInfo" > %s' % (genome, outf))
         return outf
@@ -252,10 +350,11 @@ def _shuffle_and_run_star(args):
 def _shuffle_and_run(shuffle_str, query, subject, genome, temp_dir, command,
                      value_fn):
     bed_seed = random.randint(0, sys.maxint)
-    shuffle_cmd = 'bedtools shuffle -seed %i %s -i %s -g %s' \
+    shuffle_cmd = 'bedtools shuffle -maxTries 9999 -seed %i %s -i %s -g %s' \
             % (bed_seed, shuffle_str, query, genome)
     full_command = "%s |  %s" % (shuffle_cmd, command)
     args_dict = dict(query="<(sort -k1,1 -k2,2n -)", subject=subject)
+    #print >>sys.stderr, full_command % args_dict
     res_iter = nopen("|%s" % full_command % args_dict)
     value = value_fn(res_iter)
     assert isinstance(value, dict)

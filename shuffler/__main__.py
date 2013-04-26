@@ -24,7 +24,7 @@ shuffling_constraints_doc = """
 import random
 from toolshed import reader, nopen
 from .files import stream_file, parse_file_pad
-from .shuffler import Shuffler, jaccard_values
+from .shuffler import Shuffler, jaccard_values, merge_beds
 import atexit
 import os
 
@@ -49,6 +49,8 @@ def main():
         "genome version (to get chromosomes), e.g. mm8, dm3, hg19 or a file")
     # can have --domain or --domains not both
     g_doms = g_constraints.add_mutually_exclusive_group()
+    g_doms.add_argument("--chrom", help="shuffle within chromosomes",
+            default=False, action='store_true')
     g_doms.add_argument("--domain", "--include", dest="domain",
             help="(optional) shuffle -a intervals inside this domain. "
             "(may be specified multiple times)")
@@ -138,39 +140,6 @@ def plot(res, png):
     f.subplots_adjust(hspace=0.05, wspace=0.025, top=0.97, left=0.15, right=0.98)
     f.savefig(png)
 
-
-def merge_excl(excl_list, genome):
-    if not os.path.exists(genome):
-        fgen = tempfile.mktemp()
-        genome = Shuffler.genome(genome, fgen)
-        atexit.register(os.unlink, genome)
-
-    if len(excl_list) == 1:
-        excl = excl_list[0]
-    else:
-        excl = tempfile.mktemp()
-        list(nopen("|cut -f 1-3 %s | sort -k1,1 -k2,2n | bedtools merge -i - > %s" \
-                % (" ".join(excl_list), excl)))
-        atexit.register(os.unlink, excl)
-
-    bases = []
-    for i, f in enumerate((genome, excl)):
-        n_bases = 0
-        for toks in reader(f, header=False):
-            try:
-                if i == 0:
-                    n_bases += int(toks[1])
-                else:
-                    n_bases += (int(toks[2]) - int(toks[1]))
-            except ValueError:
-                pass
-        bases.append(n_bases)
-
-    print >>sys.stderr, "# excluding %5g out of %5g total bases (%.3g%%) in the genome" % \
-            (bases[1] , bases[0], 100. * bases[1] / float(bases[0]))
-
-    return excl
-
 def gen_files(fname, col=-1):
     files = {}
     for i, toks in enumerate(reader(fname, header=False)):
@@ -191,12 +160,6 @@ def gen_files(fname, col=-1):
         fh.close()
         #atexit.register(os.unlink, fh.name)
         yield key, fh.name
-
-def count_length(bed):
-    l = 0
-    for toks in bed:
-        l += int(toks[2]) - int(toks[1])
-    return l
 
 def shuffle(args):
 
@@ -228,23 +191,13 @@ def shuffle(args):
             command = "bedtools intersect -a %(query)s -b %(subject)s -wo"
             command_string = "|" + value_fn.lstrip("|")
             value_fn = _wrapper_fn(command_string)
-
-    excl = merge_excl(args.exclude, args.genome) if args.exclude else ""
-    shuffle_str = ("-excl %s" % excl) if args.exclude else ""
-    shuffle_str += " -chrom"
-    if excl:
-        n_orig = count_length(reader("|bedtools merge -i <(sort -k1,1 -k2,2n %s)" \
-                    % a, header=False))
-        n_after = count_length(reader("|bedtools subtract -a %s -b %s" \
-                % (a, excl), header=False))
-        if n_orig - n_after > 0:
-            print >>sys.stderr, "#removing %i of %i (%.3g%%) from %s" % \
-                (n_orig - n_after, n_orig, 100. * (n_orig - n_after) / n_orig, args.a)
-
+    genome = Shuffler.genome(args.genome)
     results = []
     for bname, b in bs:
-        s = Shuffler(a, b, args.genome, value_fn, n=args.n,
-                shuffle_str=shuffle_str,
+        s = Shuffler(a, b, genome, value_fn, n=args.n,
+                excludes=args.exclude,
+                includes=args.domain,
+                chrom=args.chrom,
                 structure=args.structure,
                 seed=args.seed, map=args.threads if args.threads > 1 else map)
 
